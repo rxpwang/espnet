@@ -18,7 +18,7 @@ from espnet2.asr.decoder.transformer_decoder import (
     TransformerDecoder,
 )
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
-from espnet2.asr.encoder.branchformer_encoder import BranchformerEncoder
+from espnet2.asr.encoder.branchformer_encoder import (BranchformerEncoder, BranchformerEncoderInf,)
 from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
 from espnet2.asr.encoder.contextual_block_conformer_encoder import (
     ContextualBlockConformerEncoder,
@@ -131,6 +131,7 @@ encoder_choices = ClassChoices(
         hubert_pretrain=FairseqHubertPretrainEncoder,
         longformer=LongformerEncoder,
         branchformer=BranchformerEncoder,
+        branchformer_inference=BranchformerEncoderInf,
     ),
     type_check=AbsEncoder,
     default="rnn",
