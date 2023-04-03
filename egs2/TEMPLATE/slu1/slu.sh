@@ -6,6 +6,7 @@ set -e
 set -u
 set -o pipefail
 
+
 log() {
     local fname=${BASH_SOURCE[1]##*/}
     echo -e "$(date '+%Y-%m-%dT%H:%M:%S') (${fname}:${BASH_LINENO[0]}:${FUNCNAME[1]}) $*"
@@ -573,8 +574,8 @@ if ! "${skip_data_prep}"; then
                     _suf=""
                 fi
                 # Generate dummy wav.scp to avoid error by copy_data_dir.sh
-                if [ ! -f data/"${dset}"/wav.scp ]; then 
-		            if [ ! -f data/"${dset}"/segments ]; then 
+                if [ ! -f data/"${dset}"/wav.scp ]; then
+		            if [ ! -f data/"${dset}"/segments ]; then
 		                <data/"${dset}"/feats.scp awk ' { print($1,"<DUMMY>") }' > data/"${dset}"/wav.scp
                     else
 		                <data/"${dset}"/segments awk ' { print($2,"<DUMMY>") }' > data/"${dset}"/wav.scp
@@ -609,7 +610,7 @@ if ! "${skip_data_prep}"; then
             # Copy data dir
             utils/copy_data_dir.sh --validate_opts --non-print "${data_feats}/org/${dset}" "${data_feats}/${dset}"
             cp "${data_feats}/org/${dset}/feats_type" "${data_feats}/${dset}/feats_type"
-            
+
             for utt_extra_file in ${utt_extra_files}; do
                 cp "${data_feats}/org/${dset}/${utt_extra_file}" "${data_feats}/${dset}"
             done
@@ -959,7 +960,7 @@ if ! "${skip_train}"; then
         if "${use_ngram}"; then
             log "Stage 9: Ngram Training: train_set=${data_feats}/lm_train.txt"
             cut -f 2 -d " " ${data_feats}/lm_train.txt | lmplz -S "20%" --discount_fallback -o ${ngram_num} - >${ngram_exp}/${ngram_num}gram.arpa
-            build_binary -s ${ngram_exp}/${ngram_num}gram.arpa ${ngram_exp}/${ngram_num}gram.bin 
+            build_binary -s ${ngram_exp}/${ngram_num}gram.arpa ${ngram_exp}/${ngram_num}gram.bin
         else
             log "Stage 9: Skip ngram stages: use_ngram=${use_ngram}"
         fi
@@ -1052,7 +1053,7 @@ if ! "${skip_train}"; then
                     --train_shape_file "${_logdir}/train.JOB.scp" \
                     --valid_shape_file "${_logdir}/valid.JOB.scp" \
                     --output_dir "${_logdir}/stats.JOB" \
-                    ${_opts} ${slu_args} || { cat "${_logdir}"/stats.1.log; exit 1; }    
+                    ${_opts} ${slu_args} || { cat "${_logdir}"/stats.1.log; exit 1; }
         else
             ${train_cmd} JOB=1:"${_nj}" "${_logdir}"/stats.JOB.log \
                 ${python} -m espnet2.bin.slu_train \
@@ -1348,7 +1349,7 @@ if ! "${skip_eval}"; then
             # 1. Split the key file
             key_file=${_data}/${_scp}
             split_scps=""
-            
+
             _nj=$(min "${inference_nj}" "$(<${key_file} wc -l)")
             slu_inference_tool="espnet2.bin.slu_inference"
 
@@ -1369,7 +1370,7 @@ if ! "${skip_eval}"; then
                         --data_path_and_name_and_type "${_data}/${_scp},speech,${_type}" \
                         --data_path_and_name_and_type "${_data}/transcript,transcript,text" \
                         --key_file "${_logdir}"/keys.JOB.scp \
-                        --slu_train_config "${slu_exp}"/config.yaml \
+                        --slu_train_config "${slu_exp}"/config_inference.yaml \
                         --slu_model_file "${slu_exp}"/"${inference_slu_model}" \
                         --output_dir "${_logdir}"/output.JOB \
                         ${_opts} ${inference_args}
@@ -1380,7 +1381,7 @@ if ! "${skip_eval}"; then
                     --ngpu "${_ngpu}" \
                     --data_path_and_name_and_type "${_data}/${_scp},speech,${_type}" \
                     --key_file "${_logdir}"/keys.JOB.scp \
-                    --slu_train_config "${slu_exp}"/config.yaml \
+                    --slu_train_config "${slu_exp}"/config_inference.yaml \
                     --slu_model_file "${slu_exp}"/"${inference_slu_model}" \
                     --output_dir "${_logdir}"/output.JOB \
                     ${_opts} ${inference_args}

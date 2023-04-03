@@ -13,13 +13,13 @@ test_sets="test devel"
 local_data_opts="--gt true"
 # Make gt true to run using ground truth text as transcript
 
-slu_config=conf/tuning/train_asr_branchformer.yaml
+slu_config=conf/tuning/train_asr_branchformer_large.yaml
 
 ./slu.sh \
     --stage 11 \
     --stop_stage 11 \
     --lang en \
-    --ngpu 1 \
+    --ngpu 4 \
     --use_transcript true \
     --use_lm false \
     --nbpe 5000 \
@@ -33,4 +33,5 @@ slu_config=conf/tuning/train_asr_branchformer.yaml
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
+    --slu_exp "branchformer_large" \
     --local_data_opts "${local_data_opts}" "$@"

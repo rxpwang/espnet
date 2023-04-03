@@ -16,7 +16,7 @@ slu_config=conf/tuning/train_asr_branchformer.yaml
 
 ./slu.sh \
     --stage 12 \
-    --stop_stage 12 \
+    --stop_stage 13 \
     --lang en \
     --ngpu 1 \
     --use_transcript true \
@@ -26,7 +26,7 @@ slu_config=conf/tuning/train_asr_branchformer.yaml
     --feats_type raw\
     --max_wav_duration 30 \
     --feats_normalize utterance_mvn\
-    --inference_nj 6 \
+    --inference_nj 1 \
     --inference_slu_model valid.acc.best.pth\
     --slu_config "${slu_config}" \
     --train_set "${train_set}" \

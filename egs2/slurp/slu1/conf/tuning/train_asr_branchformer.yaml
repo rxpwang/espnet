@@ -15,7 +15,7 @@ encoder_conf:
     gate_activation: identity
     merge_method: learned_ave
     cgmlp_weight: 0.5
-    attn_branch_drop_rate: 0.5
+    attn_branch_drop_rate: 0.0
     num_blocks: 9
     dropout_rate: 0.1
     positional_dropout_rate: 0.1
@@ -39,7 +39,7 @@ optim_conf:
 scheduler: warmuplr     # pytorch v1.1.0+ required #Tune warmup steps
 scheduler_conf:
     warmup_steps: 25000
-max_epoch: 50
+max_epoch: 30
 
 model_conf:
     ctc_weight: 0.3

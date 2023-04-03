@@ -6,19 +6,20 @@ set -e
 set -u
 set -o pipefail
 
+
 train_set="train"
 valid_set="devel"
 test_sets="test devel"
 local_data_opts="--gt true"
 # Make gt true to run using ground truth text as transcript
 
-slu_config=conf/tuning/train_asr_branchformer.yaml
+slu_config=conf/tuning/train_asr_branchformer_fix.yaml
 
 ./slu.sh \
-    --stage 13 \
-    --stop_stage 13 \
+    --stage 11 \
+    --stop_stage 11 \
     --lang en \
-    --ngpu 1 \
+    --ngpu 4 \
     --use_transcript true \
     --use_lm false \
     --nbpe 5000 \
@@ -27,9 +28,10 @@ slu_config=conf/tuning/train_asr_branchformer.yaml
     --max_wav_duration 30 \
     --feats_normalize utterance_mvn\
     --inference_nj 6 \
-    --inference_slu_model valid.acc.best.pth\
+    --inference_slu_model valid.acc.ave_10best.pth\
     --slu_config "${slu_config}" \
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
+    --slu_exp "branchformer_base_fix" \
     --local_data_opts "${local_data_opts}" "$@"
