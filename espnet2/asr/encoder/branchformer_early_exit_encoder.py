@@ -47,7 +47,7 @@ from espnet.nets.pytorch_backend.transformer.subsampling import (
 )
 
 
-class BranchformerEncoderLayer(torch.nn.Module):
+class BranchformerEarlyEncoderLayer(torch.nn.Module):
     """Branchformer encoder layer module.
 
     Args:
@@ -73,6 +73,7 @@ class BranchformerEncoderLayer(torch.nn.Module):
         cgmlp_weight: float = 0.5,
         attn_branch_drop_rate: float = 0.0,
         stochastic_depth_rate: float = 0.0,
+        skip_lay: float = 0.0,
     ):
         super().__init__()
         assert (attn is not None) or (
@@ -86,6 +87,7 @@ class BranchformerEncoderLayer(torch.nn.Module):
         self.cgmlp_weight = cgmlp_weight
         self.attn_branch_drop_rate = attn_branch_drop_rate
         self.stochastic_depth_rate = stochastic_depth_rate
+        self.skip_lay = skip_lay
         self.use_two_branches = (attn is not None) and (cgmlp is not None)
 
         if attn is not None:
@@ -191,6 +193,7 @@ class BranchformerEncoderLayer(torch.nn.Module):
             x, pos_emb = x_input, None
 
         skip_layer = False
+        skip_layer = self.skip_lay
         # with stochastic depth, residual connection `x + f(x)` becomes
         # `x <- x + 1 / (1 - p) * f(x)` at training time.
         stoch_layer_coeff = 1.0
@@ -327,7 +330,7 @@ class BranchformerEncoderLayer(torch.nn.Module):
         return x, mask
 
 
-class BranchformerEncoderInfLayer(torch.nn.Module):
+class BranchformerEarlyEncoderInfLayer(torch.nn.Module):
     """Branchformer encoder layer module.
 
     Args:
@@ -584,7 +587,7 @@ class BranchformerEncoderInfLayer(torch.nn.Module):
 
         return x, mask
 
-class BranchformerEncoder(AbsEncoder):
+class BranchformerEarlyEncoder(AbsEncoder):
     """Branchformer encoder module."""
 
     def __init__(
@@ -613,6 +616,7 @@ class BranchformerEncoder(AbsEncoder):
         padding_idx: int = -1,
         stochastic_depth_rate: Union[float, List[float]] = 0.0,
         attn_num: int = 0,
+        skip_level: int = 0,
     ):
         assert check_argument_types()
         super().__init__()
@@ -780,9 +784,14 @@ class BranchformerEncoder(AbsEncoder):
         if attn_num != 0:
             for i in range(attn_num):
                 cgmlp_weight[num_blocks-1-i] = 0
+        skip_layer = [1.0] * num_blocks
+        if skip_level != 0:
+            for i in range(skip_level):
+                skip_layer[i] = 0.0
+
         self.encoders = repeat(
             num_blocks,
-            lambda lnum: BranchformerEncoderLayer(
+            lambda lnum: BranchformerEarlyEncoderLayer(
                 output_size,
                 encoder_selfattn_layer(*encoder_selfattn_layer_args)
                 if use_attn
@@ -793,6 +802,7 @@ class BranchformerEncoder(AbsEncoder):
                 cgmlp_weight[lnum],
                 attn_branch_drop_rate[lnum],
                 stochastic_depth_rate[lnum],
+                skip_layer[lnum],
             ),
         )
         self.after_norm = LayerNorm(output_size)
@@ -1049,7 +1059,7 @@ class BranchformerEncoderInf(AbsEncoder):
 
         self.encoders = repeat(
             num_blocks,
-            lambda lnum: BranchformerEncoderInfLayer(
+            lambda lnum: BranchformerEarlyEncoderInfLayer(
                 output_size,
                 encoder_selfattn_layer(*encoder_selfattn_layer_args)
                 if use_attn

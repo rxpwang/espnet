@@ -19,6 +19,7 @@ from espnet2.asr.decoder.transformer_decoder import (
 )
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.encoder.branchformer_encoder import (BranchformerEncoder, BranchformerEncoderInf,)
+from espnet2.asr.encoder.branchformer_early_exit_encoder import BranchformerEarlyEncoder
 from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
 from espnet2.asr.encoder.contextual_block_conformer_encoder import (
     ContextualBlockConformerEncoder,
@@ -132,6 +133,7 @@ encoder_choices = ClassChoices(
         longformer=LongformerEncoder,
         branchformer=BranchformerEncoder,
         branchformer_inference=BranchformerEncoderInf,
+        branchformer_early=BranchformerEarlyEncoder,
     ),
     type_check=AbsEncoder,
     default="rnn",
