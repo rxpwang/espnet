@@ -64,6 +64,7 @@ class Speech2Understand:
         batch_size: int = 1,
         dtype: str = "float32",
         beam_size: int = 20,
+        stream_length: int = 0,
         ctc_weight: float = 0.5,
         lm_weight: float = 1.0,
         ngram_weight: float = 0.9,
@@ -134,11 +135,11 @@ class Speech2Understand:
         if ngram_file is not None:
             if ngram_scorer == "full":
                 from espnet.nets.scorers.ngram import NgramFullScorer
-
+                logging.info("Use ngram full scorer")
                 ngram = NgramFullScorer(ngram_file, token_list)
             else:
                 from espnet.nets.scorers.ngram import NgramPartScorer
-
+                logging.info("Use ngram part scorer")
                 ngram = NgramPartScorer(ngram_file, token_list)
         else:
             ngram = None
@@ -230,6 +231,7 @@ class Speech2Understand:
         self.converter = converter
         self.tokenizer = tokenizer
         self.beam_search = beam_search
+        self.stream_length = stream_length
         self.beam_search_transducer = beam_search_transducer
         self.maxlenratio = maxlenratio
         self.minlenratio = minlenratio
@@ -277,15 +279,39 @@ class Speech2Understand:
             )
             # print(text)
             # print(text_lengths)
-            batch = {
-                "speech": speech,
-                "speech_lengths": lengths,
-                "transcript_pad": transcript,
-                "transcript_pad_lens": transcript_lengths,
-            }
+            if self.stream_length == 0:
+                batch = {
+                    "speech": speech,
+                    "speech_lengths": lengths,
+                    "transcript_pad": transcript,
+                    "transcript_pad_lens": transcript_lengths,
+                }
+            else:
+                if lengths.item() < self.stream_length * 16000:
+                    logging.info(f"Audio is short, keep original length")
+                    batch = {
+                        "speech": speech,
+                        "speech_lengths": lengths,
+                        "transcript_pad": transcript,
+                        "transcript_pad_lens": transcript_lengths,
+                    }
+                else:
+                    logging.info(f"Audio cut to the stream length")
+                    speech_cut = speech[:, :int(self.stream_length * 16000)]
+                    lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
+                    batch = {
+                        "speech": speech_cut,
+                        "speech_lengths": lengths,
+                        "transcript_pad": transcript,
+                        "transcript_pad_lens": transcript_lengths,
+                    }
 
         # a. To device
         batch = to_device(batch, device=self.device)
+
+        # profiling encoder input and encoding time
+        #logging.info(f"stream_length: {self.stream_length}")
+        logging.info(f"encoder input: {batch}")
 
         # b. Forward Encoder
         enc, _ = self.asr_model.encode(**batch)
@@ -376,6 +402,7 @@ def inference(
     batch_size: int,
     dtype: str,
     beam_size: int,
+    stream_length: int,
     ngpu: int,
     seed: int,
     ctc_weight: float,
@@ -441,6 +468,7 @@ def inference(
         minlenratio=minlenratio,
         dtype=dtype,
         beam_size=beam_size,
+        stream_length=stream_length,
         ctc_weight=ctc_weight,
         lm_weight=lm_weight,
         ngram_weight=ngram_weight,
@@ -668,6 +696,8 @@ def get_parser():
         default=None,
         help="The keyword arguments for transducer beam search.",
     )
+
+    group.add_argument("--stream_length", type=int, default=0, help="streaming length")
 
     group = parser.add_argument_group("Text converter related")
     group.add_argument(

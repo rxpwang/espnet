@@ -147,6 +147,7 @@ class CommonPreprocessor(AbsPreprocessor):
         speech_name: str = "speech",
         text_name: str = "text",
         fs: int = 0,
+        streaming: int = 0,
     ):
         super().__init__(train)
         self.train = train
@@ -157,6 +158,11 @@ class CommonPreprocessor(AbsPreprocessor):
         self.noise_apply_prob = noise_apply_prob
         self.short_noise_thres = short_noise_thres
         self.aux_task_names = aux_task_names
+        if (streaming != None):
+            self.streaming = streaming
+        else:
+            self.streaming = 0
+        self.original_speech_length = 0
 
         if token_type is not None:
             if token_list is None:
@@ -285,9 +291,16 @@ class CommonPreprocessor(AbsPreprocessor):
     ) -> Dict[str, Union[str, np.ndarray]]:
         assert check_argument_types()
         if self.speech_name in data:
+            if self.streaming != 0:
+                self.original_speech_length = float(len(data[self.speech_name]))
+                speech = data[self.speech_name]
+                if len(data[self.speech_name]) > 16000 * self.streaming:
+                    speech = speech[:16000*self.streaming]
+                data[self.speech_name] = speech
             if self.train and (self.rirs is not None or self.noises is not None):
                 speech = data[self.speech_name]
-
+                #logging.info(f"Data: {data}")
+                #logging.info(f"Speech: {speech}")
                 # speech: (Nmic, Time)
                 if speech.ndim == 1:
                     speech = speech[None, :]
@@ -330,6 +343,8 @@ class CommonPreprocessor(AbsPreprocessor):
             text = self.text_cleaner(text)
             tokens = self.tokenizer.text2tokens(text)
             text_ints = self.token_id_converter.tokens2ids(tokens)
+            if self.streaming != 0:
+                text_ints = text_ints[:int(len(text_ints) * self.streaming * 16000 / float(len(data[self.speech_name])))]
             data[self.text_name] = np.array(text_ints, dtype=np.int64)
         if self.aux_task_names is not None and self.tokenizer is not None:
             for name in self.aux_task_names:
@@ -346,8 +361,9 @@ class CommonPreprocessor(AbsPreprocessor):
         self, uid: str, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
         assert check_argument_types()
-
+        #logging.info(f"Data: {data[self.speech_name].shape}")
         data = self._speech_process(data)
+        #logging.info(f"Data: {data[self.speech_name].shape}")
         data = self._text_process(data)
         return data
 
@@ -375,6 +391,7 @@ class SLUPreprocessor(CommonPreprocessor):
         speech_volume_normalize: float = None,
         speech_name: str = "speech",
         text_name: str = "text",
+        streaming: int = 0,
     ):
         super().__init__(
             train=train,
@@ -396,7 +413,9 @@ class SLUPreprocessor(CommonPreprocessor):
             speech_volume_normalize=speech_volume_normalize,
             speech_name=speech_name,
             text_name=text_name,
+            streaming=streaming,
         )
+        #self.original_speech_length = float(len(data[self.speech_name]))
         if transcript_token_list is not None:
             print("using transcript")
             self.transcript_tokenizer = build_tokenizer(
@@ -423,12 +442,20 @@ class SLUPreprocessor(CommonPreprocessor):
             text = self.text_cleaner(text)
             tokens = self.tokenizer.text2tokens(text)
             text_ints = self.token_id_converter.tokens2ids(tokens)
+            '''
+            if self.streaming != 0:
+                text_ints = text_ints[:int(len(text_ints) * self.streaming * 16000 / self.original_speech_length)]
+            '''
             data[self.text_name] = np.array(text_ints, dtype=np.int64)
         if "transcript" in data and self.tokenizer is not None:
             text = data["transcript"]
             text = self.text_cleaner(text)
             tokens = self.transcript_tokenizer.text2tokens(text)
             text_ints = self.transcript_token_id_converter.tokens2ids(tokens)
+            '''
+            if self.streaming != 0:
+                text_ints = text_ints[:int(len(text_ints) * self.streaming * 16000 / self.original_speech_length)]
+            '''
             data["transcript"] = np.array(text_ints, dtype=np.int64)
         assert check_return_type(data)
         return data

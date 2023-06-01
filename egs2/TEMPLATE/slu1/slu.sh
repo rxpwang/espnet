@@ -67,7 +67,7 @@ bpe_char_cover=1.0  # character coverage when modeling BPE
 # Ngram model related
 use_ngram=false
 ngram_exp=
-ngram_num=3
+ngram_num=4
 
 # Language model related
 use_lm=true       # Use language model for SLU decoding.
@@ -959,7 +959,8 @@ if ! "${skip_train}"; then
     if [ ${stage} -le 9 ] && [ ${stop_stage} -ge 9 ]; then
         if "${use_ngram}"; then
             log "Stage 9: Ngram Training: train_set=${data_feats}/lm_train.txt"
-            cut -f 2 -d " " ${data_feats}/lm_train.txt | lmplz -S "20%" --discount_fallback -o ${ngram_num} - >${ngram_exp}/${ngram_num}gram.arpa
+            cut -f 2- -d " " ${data_feats}/lm_train.txt | lmplz -S "20%" --discount_fallback -o ${ngram_num} - >${ngram_exp}/${ngram_num}gram.arpa
+            #lmplz -S "20%" --discount_fallback -o ${ngram_num} - < cut -f 2 -d " " ${data_feats}/lm_train.txt > ${ngram_exp}/${ngram_num}gram.arpa
             build_binary -s ${ngram_exp}/${ngram_num}gram.arpa ${ngram_exp}/${ngram_num}gram.bin
         else
             log "Stage 9: Skip ngram stages: use_ngram=${use_ngram}"

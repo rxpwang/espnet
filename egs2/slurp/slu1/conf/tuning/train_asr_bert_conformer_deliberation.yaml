@@ -60,7 +60,7 @@ optim_conf:
 scheduler: warmuplr     # pytorch v1.1.0+ required #Tune warmup steps
 scheduler_conf:
     warmup_steps: 25000
-max_epoch: 50
+max_epoch: 60
 
 model_conf:
     ctc_weight: 0.3
@@ -93,4 +93,4 @@ best_model_criterion:
 -   - valid
     - acc
     - max
-keep_nbest_models: 10
+keep_nbest_models: 5

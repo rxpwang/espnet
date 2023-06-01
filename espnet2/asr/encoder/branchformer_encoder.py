@@ -1114,13 +1114,14 @@ class BranchformerEncoderInf(AbsEncoder):
             else:
                 tmp_o = torch.nn.functional.pad(input=tmp_o, pad=(0, 0, 0, 33-k[2], 0, 0, 0, 0), mode='constant', value=0)
             tmp_o = tmp_o.numpy()
+            '''
             if os.path.exists(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/CNN.npy'):
                 tmp1 = numpy.load(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/CNN.npy')
                 tmp1 = numpy.concatenate((tmp1, tmp_o), axis=0)
                 numpy.save(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/CNN.npy', tmp1)
             else:
                 numpy.save(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/CNN.npy', tmp_o)
-
+            '''
 
             '''
             recordname = '/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/CNN_Size.txt'
@@ -1140,7 +1141,7 @@ class BranchformerEncoderInf(AbsEncoder):
             else:
                 tmp_o = torch.nn.functional.pad(input=tmp_o, pad=(0, 0, 0, 33-k[1], 0, 0), mode='constant', value=0)
             tmp_o = tmp_o.numpy()
-
+            '''
             if os.path.exists(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/Linear.npy'):
                 tmp1 = numpy.load(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/Linear.npy')
                 tmp1 = numpy.concatenate((tmp1, tmp_o), axis=0)
@@ -1148,6 +1149,7 @@ class BranchformerEncoderInf(AbsEncoder):
             else:
                 numpy.save(r'/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/Linear.npy', tmp_o)
 
+            '''
             '''
             tmp = xs_pad
             recordname = '/u/waq9hw/Documents/Speech/espnet/egs2/slurp/slu1/Linear_Size.txt'

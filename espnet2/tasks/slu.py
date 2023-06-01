@@ -367,7 +367,12 @@ class SLUTask(ASRTask):
             help="If len(noise) / len(speech) is smaller than this threshold during "
             "dynamic mixing, a warning will be displayed.",
         )
-
+        group.add_argument(
+            "--train_streaming",
+            type=int,
+            default=0,
+            help="Train offramp decoder for streaming offramp exit.",
+        )
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
             # e.g. --encoder and --encoder_conf
@@ -407,6 +412,9 @@ class SLUTask(ASRTask):
                 else 0.5,
                 speech_volume_normalize=args.speech_volume_normalize
                 if hasattr(args, "rir_scp")
+                else None,
+                streaming=args.train_streaming
+                if hasattr(args, "train_streaming")
                 else None,
             )
         else:
