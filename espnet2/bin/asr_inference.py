@@ -76,6 +76,7 @@ class Speech2Text:
         batch_size: int = 1,
         dtype: str = "float32",
         beam_size: int = 20,
+        stream_length: float = 0.0,
         ctc_weight: float = 0.5,
         lm_weight: float = 1.0,
         ngram_weight: float = 0.9,
@@ -334,6 +335,7 @@ class Speech2Text:
         self.hugging_face_model = hugging_face_model
         self.hugging_face_linear_in = hugging_face_linear_in
         self.hugging_face_beam_size = beam_size
+        self.stream_length = stream_length
         self.hugging_face_decoder_max_length = hugging_face_decoder_max_length
         self.maxlenratio = maxlenratio
         self.minlenratio = minlenratio
@@ -372,11 +374,25 @@ class Speech2Text:
         speech = speech.unsqueeze(0).to(getattr(torch, self.dtype))
         # lengths: (1,)
         lengths = speech.new_full([1], dtype=torch.long, fill_value=speech.size(1))
-        batch = {"speech": speech, "speech_lengths": lengths}
+
+        if self.stream_length == 0:
+            batch = {"speech": speech, "speech_lengths": lengths}
+        else:
+            if lengths.item() < self.stream_length * 16000:
+                logging.info(f"Audio is short, keep original length")
+                batch = {"speech": speech, "speech_lengths": lengths}
+            else:
+                logging.info(f"Audio cut to the stream length")
+                speech_cut = speech[:, :int(self.stream_length * 16000)]
+                lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
+                batch = {"speech": speech_cut, "speech_lengths": lengths}
+
         logging.info("speech length: " + str(speech.size(1)))
 
         # a. To device
         batch = to_device(batch, device=self.device)
+
+        logging.info(f"encoder input: {batch}")
 
         # b. Forward Encoder
         enc, _ = self.asr_model.encode(**batch)
@@ -522,6 +538,7 @@ def inference(
     batch_size: int,
     dtype: str,
     beam_size: int,
+    stream_length: float,
     ngpu: int,
     seed: int,
     ctc_weight: float,
@@ -592,6 +609,7 @@ def inference(
         minlenratio=minlenratio,
         dtype=dtype,
         beam_size=beam_size,
+        stream_length=stream_length,
         ctc_weight=ctc_weight,
         lm_weight=lm_weight,
         ngram_weight=ngram_weight,
@@ -862,6 +880,8 @@ def get_parser():
         default=None,
         help="The keyword arguments for transducer beam search.",
     )
+
+    group.add_argument("--stream_length", type=float, default=0, help="streaming length")
 
     group = parser.add_argument_group("Text converter related")
     group.add_argument(
