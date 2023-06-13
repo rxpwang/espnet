@@ -310,9 +310,9 @@ class BatchBeamSearch(BeamSearch):
 
         """
         n_batch = running_hyps.yseq.shape[0]
-        logging.debug(f"the number of running hypothes: {n_batch}")
+        logging.info(f"the number of running hypothes: {n_batch}")
         if self.token_list is not None:
-            logging.debug(
+            logging.info(
                 "best hypo: "
                 + "".join(
                     [
@@ -321,6 +321,7 @@ class BatchBeamSearch(BeamSearch):
                     ]
                 )
             )
+            logging.info(f"best score: {running_hyps.score} best scores: {running_hyps.scores}")
         # add eos in the final loop to avoid that there are no ended hyps
         if i == maxlen - 1:
             logging.info("adding <eos> in the last position in the loop")

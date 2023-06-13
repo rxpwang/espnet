@@ -377,7 +377,9 @@ class BeamSearch(torch.nn.Module):
         running_hyps = self.init_hyp(x)
         ended_hyps = []
         for i in range(maxlen):
-            logging.debug("position " + str(i))
+            #logging.debug("position " + str(i))
+            logging.info("position " + str(i))
+            #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
@@ -392,6 +394,7 @@ class BeamSearch(torch.nn.Module):
                 logging.debug(f"remained hypotheses: {len(running_hyps)}")
 
         nbest_hyps = sorted(ended_hyps, key=lambda x: x.score, reverse=True)
+        #logging.info(f"nbest_hyps: {nbest_hyps}")
         # check the number of hypotheses reaching to eos
         if len(nbest_hyps) == 0:
             logging.warning(
