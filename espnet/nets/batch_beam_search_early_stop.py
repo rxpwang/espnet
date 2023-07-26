@@ -8,6 +8,7 @@ from packaging.version import parse as V
 from torch.nn.utils.rnn import pad_sequence
 
 from espnet.nets.beam_search import BeamSearch, Hypothesis
+from espnet.nets.beam_search_early_stop import BeamSearchEarlyStop
 
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
 
@@ -26,7 +27,7 @@ class BatchHypothesis(NamedTuple):
         return len(self.length)
 
 
-class BatchBeamSearch(BeamSearch):
+class BatchBeamSearchEarlyStop(BeamSearchEarlyStop):
     """Batch beam search implementation."""
 
     def batchfy(self, hyps: List[Hypothesis]) -> BatchHypothesis:
