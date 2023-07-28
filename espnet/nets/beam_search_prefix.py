@@ -344,7 +344,7 @@ class BeamSearchPrefix(torch.nn.Module):
         return best_hyps
 
     def forward(
-            self, x: torch.Tensor, running_hyps, ended_hyps, maxlenratio: float = 0.0, minlenratio: float = 0.0
+            self, x: torch.Tensor, running_hyps, ended_hyps, cur_len, maxlenratio: float = 0.0, minlenratio: float = 0.0
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -378,9 +378,11 @@ class BeamSearchPrefix(torch.nn.Module):
         #running_hyps = self.init_hyp(x)
         #ended_hyps = []
         runing_hyps = running_hyps
+        if len(running_hyps) == 0:
+            running_hyps = self.init_hyp(x)
         ended_hyps = ended_hyps
 
-        for i in range(maxlen):
+        for i in range(cur_len+1, maxlen):
             #logging.debug("position " + str(i))
             logging.info("position " + str(i))
             #logging.info(f"running_hyps: {running_hyps}")

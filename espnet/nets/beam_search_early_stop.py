@@ -380,9 +380,11 @@ class BeamSearchEarlyStop(torch.nn.Module):
         running_hyps = self.init_hyp(x)
         ended_hyps = []
         iteration = min(self.early_stop_step, maxlen)
+        cur_len = 0
         for i in range(iteration):
             #logging.debug("position " + str(i))
             logging.info("position " + str(i))
+            cur_len = i
             #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
             # post process of one iteration
@@ -401,6 +403,7 @@ class BeamSearchEarlyStop(torch.nn.Module):
         #logging.info(f"nbest_hyps: {nbest_hyps}")
         # check the number of hypotheses reaching to eos
         if len(nbest_hyps) == 0:
+            '''
             logging.warning(
                 "there is no N-best results, perform recognition "
                 "again with smaller minlenratio."
@@ -410,6 +413,9 @@ class BeamSearchEarlyStop(torch.nn.Module):
                 if minlenratio < 0.1
                 else self.forward(x, maxlenratio, max(0.0, minlenratio - 0.1))
             )
+            '''
+            logging.warning("No ended result, return running results.")
+            return [], running_hyps, [], cur_len
 
         # report the best result
         best = nbest_hyps[0]
@@ -436,7 +442,7 @@ class BeamSearchEarlyStop(torch.nn.Module):
                 "decoding may be stopped by the max output length limitation, "
                 + "please consider to increase the maxlenratio."
             )
-        return nbest_hyps, running_hyps, ended_hyps
+        return nbest_hyps, running_hyps, ended_hyps, cur_len
 
     def post_process(
         self,

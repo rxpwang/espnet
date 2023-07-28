@@ -418,6 +418,7 @@ class Speech2Text_2pass:
             if lengths.item() < self.stream_length * 16000:
                 logging.info(f"Audio is short, keep original length")
                 batch = {"speech": speech, "speech_lengths": lengths}
+                batch_partial = {"speech": speech, "speech_lengths": lengths}
             else:
                 logging.info(f"Audio cut to the stream length")
                 speech_cut = speech[:, :int(self.stream_length * 16000)]
@@ -472,8 +473,8 @@ class Speech2Text_2pass:
             # Two pass, first pass use partial data and get early stopped beam search result
             # Second pass use full data and get final output
 
-            results_partial, running_hyps, ended_hyps = self._decode_single_sample_partial(enc_partial[0])
-            results = self._decoding_single_sample_full(enc[0], running_hyps, ended_hyps)
+            results_partial, running_hyps, ended_hyps, cur_len = self._decode_single_sample_partial(enc_partial[0])
+            results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, cur_len)
             assert check_return_type(results)
 
         return results
@@ -517,6 +518,7 @@ class Speech2Text_2pass:
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
+            logging.info("beam_search_early_stop start: {self.beam_search_early_stop}")
             nbest_hyps, running_hyps, ended_hyps = self.beam_search_early_stop(
                 x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )
@@ -588,7 +590,7 @@ class Speech2Text_2pass:
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             nbest_hyps = self.beam_search_prefix(
-                x=enc, running_hyps, ended_hyps, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+                x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]
@@ -647,7 +649,7 @@ class Speech2Text_2pass:
             d = ModelDownloader()
             kwargs.update(**d.download_and_unpack(model_tag))
 
-        return Speech2Text(**kwargs)
+        return Speech2Text_2pass(**kwargs)
 
 
 def inference(
@@ -747,7 +749,7 @@ def inference(
         hugging_face_decoder_max_length=hugging_face_decoder_max_length,
         time_sync=time_sync,
     )
-    speech2text = Speech2Text.from_pretrained(
+    speech2text = Speech2Text_2pass.from_pretrained(
         model_tag=model_tag,
         **speech2text_kwargs,
     )
