@@ -27,7 +27,7 @@ class Hypothesis(NamedTuple):
         )._asdict()
 
 
-class BeamSearch(torch.nn.Module):
+class BeamSearchFull(torch.nn.Module):
     """Beam search implementation."""
 
     def __init__(
@@ -67,6 +67,10 @@ class BeamSearch(torch.nn.Module):
         self.scorers = dict()
         self.full_scorers = dict()
         self.part_scorers = dict()
+
+        # set placeholder for reference hyp
+        self.reference_hyp = None
+
         # this module dict is required for recursive cast
         # `self.to(device, dtype)` in `recog.py`
         self.nn_dict = torch.nn.ModuleDict()
@@ -344,7 +348,7 @@ class BeamSearch(torch.nn.Module):
         return best_hyps
 
     def forward(
-        self, x: torch.Tensor, maxlenratio: float = 0.0, minlenratio: float = 0.0
+            self, x: torch.Tensor, running_hyps, ended_hyps, cur_len, maxlenratio: float = 0.0, minlenratio: float = 0.0, audio_len: float = 0.0
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -369,18 +373,92 @@ class BeamSearch(torch.nn.Module):
         else:
             maxlen = max(1, int(maxlenratio * x.size(0)))
         minlen = int(minlenratio * x.size(0))
+        logging.info("Start second pass of beam search with full length data, let's see how it works.")
         logging.info("decoder input length: " + str(x.shape[0]))
         logging.info("max output length: " + str(maxlen))
         logging.info("min output length: " + str(minlen))
 
-        # main loop of prefix search
+        # prepare for reference preliminary pilot inference result
+        # Naive approach: compare the best running hyps and the best ended hyps,
+        # select the one with higher score as reference
+        prev_running_hyps = running_hyps
+        prev_ended_hyps = ended_hyps
+        if len(prev_ended_hyps) != 0:
+            prev_ended_hyps = sorted(prev_ended_hyps, key=lambda x: x.score, reverse=True)
+        reference_hyp = None
+
+        length_predict = 0
+        if (len(prev_running_hyps) == 0) and (len(prev_ended_hyps) == 0):
+            logging.info(f"No running and ended hyps from pilot decoding.")
+        elif len(prev_running_hyps) == 0:
+            logging.info(f"No running hyps from pilot decoding, take ended best hyp as reference.")
+            reference_hyp = prev_ended_hyps[0]
+            length_predict = maxlen
+        elif len(prev_ended_hyps) == 0:
+            logging.info(f"No ended hyps from pilot decoding, take running best hyp as reference.")
+            reference_hyp = prev_running_hyps[0]
+            #length_predict = len(reference_hyp.yseq) + 3
+            length_predict = maxlen
+        else:
+            if prev_running_hyps[0].score > prev_ended_hyps[0].score:
+                logging.info(f"Choose from pilot running and ended hyps... Take running best.")
+                reference_hyp = prev_running_hyps[0]
+                #length_predict = len(reference_hyp.yseq) + 3
+                length_predict = maxlen
+            else:
+                logging.info(f"Choose from pilot running and ended hyps... Take ended best.")
+                reference_hyp = prev_ended_hyps[0]
+                length_predict = maxlen
+
+        partial_len = 0
+        granularity = 0.5
+        if audio_len >= 40000:
+            chunk = int((audio_len - 32000) / int(granularity * 16000)) - 1
+            partial_len = 32000 + chunk * granularity * 16000
+        else:
+            partial_len = audio_len
+
+        length_predict = float(audio_len) / partial_len * len(reference_hyp.yseq)
+        length_predict = int(length_predict)
+
+        logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))
+        self.reference_hyp = reference_hyp
+
+        # main loop of full search
         running_hyps = self.init_hyp(x)
         ended_hyps = []
-        for i in range(maxlen):
+        '''
+        runing_hyps = running_hyps
+        if len(running_hyps) == 0:
+            running_hyps = self.init_hyp(x)
+        ended_hyps = ended_hyps
+        '''
+
+        #for i in range(maxlen):
+        for i in range(length_predict):
+            # reduce the beam if best hyp match with reference
+            #if self.reference_hyp.yseq[i] == running_hyps[0].yseq[i]:
+            #    running_hyps = [running_hyps[0]]
+
             #logging.debug("position " + str(i))
             logging.info("position " + str(i))
             #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
+
+            # reduce the beam if best hyp match with reference
+            if ((i+1) < len(self.reference_hyp.yseq)):
+                # at early stage, we keep all the hyp with match token
+                if i < 5:
+                    tmp_list = []
+                    for t in range(len(best)):
+                        if self.reference_hyp.yseq[i+1] == best[t].yseq[i+1]:
+                            tmp_list.append(best[t])
+                    if len(tmp_list) != 0:
+                        best = tmp_list
+                else:
+                    if self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]:
+                        best = [best[0]]
+
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
             # end detection
@@ -402,9 +480,9 @@ class BeamSearch(torch.nn.Module):
                 "again with smaller minlenratio."
             )
             nbest_hyps = [
-                    h._replace(yseq=self.append_token(h.yseq, self.eos))
-                    for h in running_hyps
-                    ]
+                h._replace(yseq=self.append_token(h.yseq, self.eos))
+                for h in running_hyps
+                ]
             '''
             return (
                 []
@@ -461,26 +539,12 @@ class BeamSearch(torch.nn.Module):
             List[Hypothesis]: The new running hypotheses.
 
         """
-        logging.info(f"the number of running hypotheses: {len(running_hyps)}")
+        logging.debug(f"the number of running hypotheses: {len(running_hyps)}")
         if self.token_list is not None:
-            score_tmp = []
-            scores_tmp_decoder = []
-            scores_tmp_ctc = []
-            for t in range(len(running_hyps)):
-                logging.info(
-                    "best " + str(t+1) + " hypo: "
-                    + "".join([self.token_list[x] for x in running_hyps[t].yseq[1:]])
-                )
-                score_tmp.append(running_hyps[t].score.item())
-                scores_tmp_decoder.append(running_hyps[t].scores['decoder'].item())
-                if 'ctc' in running_hyps[t].scores.keys():
-                    scores_tmp_ctc.append(running_hyps[t].scores['ctc'].item())
-            score_tmp = torch.Tensor(score_tmp)
-            scores_tmp = dict()
-            scores_tmp['decoder'] = torch.Tensor(scores_tmp_decoder)
-            if 'ctc' in running_hyps[0].scores.keys():
-                scores_tmp['ctc'] = torch.Tensor(scores_tmp_ctc)
-            logging.info(f"best score: {score_tmp} best scores: {scores_tmp}")
+            logging.debug(
+                "best hypo: "
+                + "".join([self.token_list[x] for x in running_hyps[0].yseq[1:]])
+            )
         # add eos in the final loop to avoid that there are no ended hyps
         if i == maxlen - 1:
             logging.info("adding <eos> in the last position in the loop")
@@ -505,7 +569,7 @@ class BeamSearch(torch.nn.Module):
         return remained_hyps
 
 
-def beam_search(
+def beam_search_full(
     x: torch.Tensor,
     sos: int,
     eos: int,
@@ -545,7 +609,7 @@ def beam_search(
         list: N-best decoding results
 
     """
-    ret = BeamSearch(
+    ret = BeamSearchFull(
         scorers,
         weights,
         beam_size=beam_size,

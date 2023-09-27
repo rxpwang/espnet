@@ -27,7 +27,7 @@ class Hypothesis(NamedTuple):
         )._asdict()
 
 
-class BeamSearch(torch.nn.Module):
+class BeamSearchPilot(torch.nn.Module):
     """Beam search implementation."""
 
     def __init__(
@@ -38,6 +38,7 @@ class BeamSearch(torch.nn.Module):
         vocab_size: int,
         sos: int,
         eos: int,
+        pilot_step: int,
         token_list: List[str] = None,
         pre_beam_ratio: float = 1.5,
         pre_beam_score_key: str = None,
@@ -89,6 +90,7 @@ class BeamSearch(torch.nn.Module):
         self.sos = sos
         self.eos = eos
 
+        self.pilot_step = pilot_step
         # added for OpenAI Whisper decoding
         self.hyp_primer = hyp_primer
 
@@ -369,6 +371,7 @@ class BeamSearch(torch.nn.Module):
         else:
             maxlen = max(1, int(maxlenratio * x.size(0)))
         minlen = int(minlenratio * x.size(0))
+        logging.info("Start pilot beam search with partial data, pilot step: " + str(self.pilot_step))
         logging.info("decoder input length: " + str(x.shape[0]))
         logging.info("max output length: " + str(maxlen))
         logging.info("min output length: " + str(minlen))
@@ -376,9 +379,12 @@ class BeamSearch(torch.nn.Module):
         # main loop of prefix search
         running_hyps = self.init_hyp(x)
         ended_hyps = []
-        for i in range(maxlen):
+        iteration = min(self.pilot_step, maxlen)
+        cur_len = 0
+        for i in range(iteration):
             #logging.debug("position " + str(i))
             logging.info("position " + str(i))
+            cur_len = i
             #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
             # post process of one iteration
@@ -397,21 +403,19 @@ class BeamSearch(torch.nn.Module):
         #logging.info(f"nbest_hyps: {nbest_hyps}")
         # check the number of hypotheses reaching to eos
         if len(nbest_hyps) == 0:
+            '''
             logging.warning(
                 "there is no N-best results, perform recognition "
                 "again with smaller minlenratio."
             )
-            nbest_hyps = [
-                    h._replace(yseq=self.append_token(h.yseq, self.eos))
-                    for h in running_hyps
-                    ]
-            '''
             return (
                 []
                 if minlenratio < 0.1
                 else self.forward(x, maxlenratio, max(0.0, minlenratio - 0.1))
             )
             '''
+            logging.warning("No ended result, return running results.")
+            return [], running_hyps, [], cur_len
 
         # report the best result
         best = nbest_hyps[0]
@@ -438,7 +442,7 @@ class BeamSearch(torch.nn.Module):
                 "decoding may be stopped by the max output length limitation, "
                 + "please consider to increase the maxlenratio."
             )
-        return nbest_hyps
+        return nbest_hyps, running_hyps, ended_hyps, cur_len
 
     def post_process(
         self,
@@ -461,26 +465,12 @@ class BeamSearch(torch.nn.Module):
             List[Hypothesis]: The new running hypotheses.
 
         """
-        logging.info(f"the number of running hypotheses: {len(running_hyps)}")
+        logging.debug(f"the number of running hypotheses: {len(running_hyps)}")
         if self.token_list is not None:
-            score_tmp = []
-            scores_tmp_decoder = []
-            scores_tmp_ctc = []
-            for t in range(len(running_hyps)):
-                logging.info(
-                    "best " + str(t+1) + " hypo: "
-                    + "".join([self.token_list[x] for x in running_hyps[t].yseq[1:]])
-                )
-                score_tmp.append(running_hyps[t].score.item())
-                scores_tmp_decoder.append(running_hyps[t].scores['decoder'].item())
-                if 'ctc' in running_hyps[t].scores.keys():
-                    scores_tmp_ctc.append(running_hyps[t].scores['ctc'].item())
-            score_tmp = torch.Tensor(score_tmp)
-            scores_tmp = dict()
-            scores_tmp['decoder'] = torch.Tensor(scores_tmp_decoder)
-            if 'ctc' in running_hyps[0].scores.keys():
-                scores_tmp['ctc'] = torch.Tensor(scores_tmp_ctc)
-            logging.info(f"best score: {score_tmp} best scores: {scores_tmp}")
+            logging.debug(
+                "best hypo: "
+                + "".join([self.token_list[x] for x in running_hyps[0].yseq[1:]])
+            )
         # add eos in the final loop to avoid that there are no ended hyps
         if i == maxlen - 1:
             logging.info("adding <eos> in the last position in the loop")
@@ -505,10 +495,11 @@ class BeamSearch(torch.nn.Module):
         return remained_hyps
 
 
-def beam_search(
+def beam_search_pilot(
     x: torch.Tensor,
     sos: int,
     eos: int,
+    pilot_step: int,
     beam_size: int,
     vocab_size: int,
     scorers: Dict[str, ScorerInterface],
@@ -545,7 +536,7 @@ def beam_search(
         list: N-best decoding results
 
     """
-    ret = BeamSearch(
+    ret = BeamSearchPilot(
         scorers,
         weights,
         beam_size=beam_size,
@@ -554,6 +545,7 @@ def beam_search(
         pre_beam_score_key=pre_beam_score_key,
         sos=sos,
         eos=eos,
+        pilot_step=pilot_step,
         token_list=token_list,
     ).forward(x=x, maxlenratio=maxlenratio, minlenratio=minlenratio)
     return [h.asdict() for h in ret]

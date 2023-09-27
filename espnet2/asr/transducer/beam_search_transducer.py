@@ -138,6 +138,7 @@ class BeamSearchTransducer:
         else:
             raise NotImplementedError
 
+        logging.info(f"search_type: {self.search_algorithm}")
         self.use_lm = lm is not None
         self.lm = lm
         self.lm_weight = lm_weight
@@ -272,13 +273,14 @@ class BeamSearchTransducer:
         kept_hyps = [Hypothesis(score=0.0, yseq=[self.blank_id], dec_state=dec_state)]
         cache = {}
         cache_lm = {}
-
+        enc_id = 0
         for enc_out_t in enc_out:
             hyps = kept_hyps
             kept_hyps = []
 
-            if self.token_list is not None:
-                logging.debug(
+            if (self.token_list is not None) and ((enc_id % 10 == 0) | (enc_id == (len(enc_out)-1))):
+                logging.info(f"Decoding step: {enc_id}\n")
+                logging.info(
                     "\n"
                     + "\n".join(
                         [
@@ -289,7 +291,7 @@ class BeamSearchTransducer:
                         ]
                     )
                 )
-
+            enc_id += 1
             while True:
                 max_hyp = max(hyps, key=lambda x: x.score)
                 hyps.remove(max_hyp)

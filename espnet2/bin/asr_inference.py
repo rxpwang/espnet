@@ -92,6 +92,7 @@ class Speech2Text:
         hugging_face_decoder_max_length: int = 256,
         time_sync: bool = False,
         multi_asr: bool = False,
+        save_encode: bool = False,
     ):
         assert check_argument_types()
 
@@ -344,6 +345,7 @@ class Speech2Text:
         self.nbest = nbest
         self.enh_s2t_task = enh_s2t_task
         self.multi_asr = multi_asr
+        self.save_encode = save_encode
 
     @torch.no_grad()
     def __call__(
@@ -377,6 +379,18 @@ class Speech2Text:
 
         if self.stream_length == 0:
             batch = {"speech": speech, "speech_lengths": lengths}
+        elif self.stream_length == 999:
+            length_int = int(lengths[0])
+            granularity = 0.5
+            if length_int >= 32000 + granularity * 16000:
+                chunk = int((length_int - 32000) / int(granularity * 16000)) - 1
+                partial_len = 32000 + chunk * granularity * 16000
+            else:
+                partial_len = length_int
+            speech_cut = speech[:, :int(partial_len)]
+            lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
+            batch = {"speech": speech_cut, "speech_lengths": lengths}
+            logging.info(f"streaming 999 mode: {batch}")
         else:
             if lengths.item() < self.stream_length * 16000:
                 logging.info(f"Audio is short, keep original length")
@@ -425,6 +439,18 @@ class Speech2Text:
             assert len(enc) == 1, len(enc)
 
             # c. Passed the encoder result and the beam search
+            if self.save_encode:
+                f = open('/p/speedoffload/espnet/egs2/slurp/asr1/idx_record.txt')
+                line = f.readline()
+                f.close()
+                idx_cur = int(line)
+                recordname = '/p/speedoffload/espnet/egs2/slurp/asr1/encode_output/'+str(idx_cur)+'.npy'
+                enc_tmp = enc[0].numpy()
+                np.save(recordname, enc_tmp)
+                idx_cur += 1
+                f = '/p/speedoffload/espnet/egs2/slurp/asr1/idx_record.txt'
+                with open(f, "w") as file:
+                    file.write(str(idx_cur))
             results = self._decode_single_sample(enc[0])
             assert check_return_type(results)
 
@@ -572,6 +598,7 @@ def inference(
     hugging_face_decoder_max_length: int,
     time_sync: bool,
     multi_asr: bool,
+    save_encode: bool,
 ):
     assert check_argument_types()
     if batch_size > 1:
@@ -618,6 +645,7 @@ def inference(
         streaming=streaming,
         enh_s2t_task=enh_s2t_task,
         multi_asr=multi_asr,
+        save_encode=save_encode,
         quantize_asr_model=quantize_asr_model,
         quantize_lm=quantize_lm,
         quantize_modules=quantize_modules,
@@ -803,6 +831,12 @@ def get_parser():
         type=str2bool,
         default=False,
         help="multi-speaker asr model",
+    )
+    group.add_argument(
+        "--save_encode",
+        type=str2bool,
+        default=False,
+        help="save the encoder output",
     )
 
     group = parser.add_argument_group("Quantization related")

@@ -30,11 +30,15 @@ from espnet2.utils import config_argparse
 from espnet2.utils.types import str2bool, str2triple_str, str_or_none
 from espnet.nets.batch_beam_search import BatchBeamSearch
 from espnet.nets.batch_beam_search_prefix import BatchBeamSearchPrefix
+from espnet.nets.batch_beam_search_full import BatchBeamSearchFull
 from espnet.nets.batch_beam_search_early_stop import BatchBeamSearchEarlyStop
+from espnet.nets.batch_beam_search_pilot import BatchBeamSearchPilot
 from espnet.nets.batch_beam_search_online_sim import BatchBeamSearchOnlineSim
 from espnet.nets.beam_search import BeamSearch, Hypothesis
 from espnet.nets.beam_search_early_stop import BeamSearchEarlyStop
+from espnet.nets.beam_search_pilot import BeamSearchPilot
 from espnet.nets.beam_search_prefix import BeamSearchPrefix
+from espnet.nets.beam_search_full import BeamSearchFull
 from espnet.nets.beam_search_timesync import BeamSearchTimeSync
 from espnet.nets.pytorch_backend.transformer.subsampling import TooShortUttError
 from espnet.nets.scorer_interface import BatchScorerInterface
@@ -81,7 +85,7 @@ class Speech2Text_2pass:
         dtype: str = "float32",
         beam_size: int = 20,
         stream_length: float = 0.0,
-        early_stop_step: int = 5,
+        pilot_step: int = 15,
         ctc_weight: float = 0.5,
         lm_weight: float = 1.0,
         ngram_weight: float = 0.9,
@@ -272,19 +276,19 @@ class Speech2Text_2pass:
                     pre_beam_score_key=None if ctc_weight == 1.0 else "full",
                 )
 
-                beam_search_early_stop = BeamSearchEarlyStop(
+                beam_search_pilot = BeamSearchPilot(
                     beam_size=beam_size,
                     weights=weights,
                     scorers=scorers,
                     sos=asr_model.sos,
                     eos=asr_model.eos,
-                    early_stop_step=early_stop_step,
+                    pilot_step=pilot_step,
                     vocab_size=len(token_list),
                     token_list=token_list,
                     pre_beam_score_key=None if ctc_weight == 1.0 else "full",
                 )
 
-                beam_search_prefix = BeamSearchPrefix(
+                beam_search_full = BeamSearchFull(
                     beam_size=beam_size,
                     weights=weights,
                     scorers=scorers,
@@ -311,8 +315,8 @@ class Speech2Text_2pass:
                             )
                         else:
                             beam_search.__class__ = BatchBeamSearch
-                            beam_search_early_stop.__class__ = BatchBeamSearchEarlyStop
-                            beam_search_prefix.__class__ = BatchBeamSearchPrefix
+                            beam_search_pilot.__class__ = BatchBeamSearchPilot
+                            beam_search_full.__class__ = BatchBeamSearchFull
                             logging.info("BatchBeamSearch implementation is selected.")
                     else:
                         logging.warning(
@@ -321,15 +325,15 @@ class Speech2Text_2pass:
                         )
 
             beam_search.to(device=device, dtype=getattr(torch, dtype)).eval()
-            beam_search_early_stop.to(device=device, dtype=getattr(torch, dtype)).eval()
-            beam_search_prefix.to(device=device, dtype=getattr(torch, dtype)).eval()
+            beam_search_pilot.to(device=device, dtype=getattr(torch, dtype)).eval()
+            beam_search_full.to(device=device, dtype=getattr(torch, dtype)).eval()
 
             for scorer in scorers.values():
                 if isinstance(scorer, torch.nn.Module):
                     scorer.to(device=device, dtype=getattr(torch, dtype)).eval()
             logging.info(f"Beam_search: {beam_search}")
-            logging.info(f"Beam_search_early_stop: {beam_search_early_stop}")
-            logging.info(f"Beam_search_prefix: {beam_search_prefix}")
+            logging.info(f"Beam_search_pilot: {beam_search_pilot}")
+            logging.info(f"Beam_search_full: {beam_search_full}")
             logging.info(f"Decoding device={device}, dtype={dtype}")
 
         # 5. [Optional] Build Text converter: e.g. bpe-sym -> Text
@@ -366,8 +370,8 @@ class Speech2Text_2pass:
         self.converter = converter
         self.tokenizer = tokenizer
         self.beam_search = beam_search
-        self.beam_search_early_stop = beam_search_early_stop
-        self.beam_search_prefix = beam_search_prefix
+        self.beam_search_pilot = beam_search_pilot
+        self.beam_search_full = beam_search_full
         self.beam_search_transducer = beam_search_transducer
         self.hugging_face_model = hugging_face_model
         self.hugging_face_linear_in = hugging_face_linear_in
@@ -414,6 +418,20 @@ class Speech2Text_2pass:
 
         if self.stream_length == 0:
             batch = {"speech": speech, "speech_lengths": lengths}
+            length_int = int(lengths[0])
+            if length_int >= 40000:
+                if length_int % 16000 >= 8000:
+                    partial_len = int(length_int / 16000) * 16000
+                else:
+                    partial_len = int(length_int / 16000 - 1) * 16000
+            else:
+                partial_len = length_int
+            logging.info(f"partial_len: {partial_len}")
+            speech_cut = speech[:, :int(partial_len)]
+            lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
+            batch_partial = {"speech": speech_cut, "speech_lengths": lengths}
+            logging.info(f"full data: {batch}")
+            logging.info(f"partial data: {batch_partial}")
         else:
             if lengths.item() < self.stream_length * 16000:
                 logging.info(f"Audio is short, keep original length")
@@ -432,8 +450,8 @@ class Speech2Text_2pass:
         batch = to_device(batch, device=self.device)
         batch_partial = to_device(batch_partial, device=self.device)
 
-        logging.info(f"encoder input: {batch}")
-
+        #logging.info(f"encoder input: {batch}")
+        #logging.info(f"encoder partial input: {batch_partial}")
         # b. Forward Encoder
         enc, _ = self.asr_model.encode(**batch)
         enc_partial, _ = self.asr_model.encode(**batch_partial)
@@ -474,6 +492,8 @@ class Speech2Text_2pass:
             # Second pass use full data and get final output
 
             results_partial, running_hyps, ended_hyps, cur_len = self._decode_single_sample_partial(enc_partial[0])
+            #logging.info(f"pilot running_hyps: {running_hyps}")
+            #logging.info(f"pilot ended_hyps: {ended_hyps}")
             results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, cur_len)
             assert check_return_type(results)
 
@@ -518,8 +538,8 @@ class Speech2Text_2pass:
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
-            logging.info("beam_search_early_stop start: {self.beam_search_early_stop}")
-            nbest_hyps, running_hyps, ended_hyps, cur_len = self.beam_search_early_stop(
+            logging.info("beam_search_pilot start: {self.beam_search_pilot}")
+            nbest_hyps, running_hyps, ended_hyps, cur_len = self.beam_search_pilot(
                 x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )
 
@@ -589,7 +609,7 @@ class Speech2Text_2pass:
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
-            nbest_hyps = self.beam_search_prefix(
+            nbest_hyps = self.beam_search_full(
                 x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, cur_len=cur_len, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )
 
@@ -660,7 +680,7 @@ def inference(
     dtype: str,
     beam_size: int,
     stream_length: float,
-    early_stop_step: int,
+    pilot_step: int,
     ngpu: int,
     seed: int,
     ctc_weight: float,
@@ -732,7 +752,7 @@ def inference(
         dtype=dtype,
         beam_size=beam_size,
         stream_length=stream_length,
-        early_stop_step=early_stop_step,
+        pilot_step=pilot_step,
         ctc_weight=ctc_weight,
         lm_weight=lm_weight,
         ngram_weight=ngram_weight,
@@ -1005,7 +1025,7 @@ def get_parser():
     )
 
     group.add_argument("--stream_length", type=float, default=0, help="streaming length")
-    group.add_argument("--early_stop_step", type=int, default=5, help="first pass beam search step")
+    group.add_argument("--pilot_step", type=int, default=15, help="first pass beam search step")
 
     group = parser.add_argument_group("Text converter related")
     group.add_argument(
