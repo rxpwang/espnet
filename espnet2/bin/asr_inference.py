@@ -47,6 +47,16 @@ except ImportError:
     is_transformers_available = False
 
 
+
+def get_partial_data_batch(partial_data_len, speech):
+    # input: partial_data_len: int, speech: torch tensor with shape (1, Nsamples)
+    # output: batch_partial = {"speech":speech_partial, "speech_lengths": lengths}
+    partial_sample_len = partial_data_len * 16000
+    speech_cut = speech[:, :int(partial_sample_len)]
+    lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
+    batch_partial = {"speech": speech_cut, "speech_lengths": lengths}
+    return batch_partial
+
 class Speech2Text:
     """Speech2Text class
 
@@ -379,27 +389,13 @@ class Speech2Text:
 
         if self.stream_length == 0:
             batch = {"speech": speech, "speech_lengths": lengths}
-        elif self.stream_length == 999:
-            length_int = int(lengths[0])
-            granularity = 0.5
-            if length_int >= 32000 + granularity * 16000:
-                chunk = int((length_int - 32000) / int(granularity * 16000)) - 1
-                partial_len = 32000 + chunk * granularity * 16000
-            else:
-                partial_len = length_int
-            speech_cut = speech[:, :int(partial_len)]
-            lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
-            batch = {"speech": speech_cut, "speech_lengths": lengths}
-            logging.info(f"streaming 999 mode: {batch}")
         else:
             if lengths.item() < self.stream_length * 16000:
                 logging.info(f"Audio is short, keep original length")
                 batch = {"speech": speech, "speech_lengths": lengths}
             else:
                 logging.info(f"Audio cut to the stream length")
-                speech_cut = speech[:, :int(self.stream_length * 16000)]
-                lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
-                batch = {"speech": speech_cut, "speech_lengths": lengths}
+                batch = get_partial_data_batch(self.stream_length, speech)
 
         logging.info("speech length: " + str(speech.size(1)))
 

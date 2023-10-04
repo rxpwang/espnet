@@ -45,6 +45,7 @@ from espnet.nets.scorer_interface import BatchScorerInterface
 from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.utils.cli_utils import get_commandline_args
+from espnet2.bin.asr_inference import get_partial_data_batch
 
 try:
     from transformers import AutoModelForSeq2SeqLM
@@ -449,15 +450,19 @@ class Speech2Text_2pass:
         if self.stream_length == 0:
             batch = {"speech": speech, "speech_lengths": lengths}
             length_int = int(lengths[0])
+
+            # for data longer than 2s, we adopt pilot decoding
+            # if data short than 2s + granularity, we let partial equal to 1.5s
+            # else we calculate the partial length at least shorter than full length - granularity
             if length_int >= 32000 + self.granularity * 16000:
                 chunk = int((length_int - 32000) / int(self.granularity * 16000)) - 1
-                partial_len = 32000 + chunk * self.granularity * 16000
+                partial_len = 2 + chunk * self.granularity
+            elif length_int >= 32000:
+                partial_len = 1.5
             else:
-                partial_len = length_int
+                partial_len = length_int / 16000
             logging.info(f"partial_len: {partial_len}")
-            speech_cut = speech[:, :int(partial_len)]
-            lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
-            batch_partial = {"speech": speech_cut, "speech_lengths": lengths}
+            batch_partial = get_partial_data_batch(partial_len, speech)
             logging.info(f"full data: {batch}")
             logging.info(f"partial data: {batch_partial}")
         else:
@@ -467,10 +472,8 @@ class Speech2Text_2pass:
                 batch_partial = {"speech": speech, "speech_lengths": lengths}
             else:
                 logging.info(f"Audio cut to the stream length")
-                speech_cut = speech[:, :int(self.stream_length * 16000)]
-                lengths = speech_cut.new_full([1], dtype=torch.long, fill_value=speech_cut.size(1))
                 batch = {"speech": speech, "speech_lengths": lengths}
-                batch_partial = {"speech": speech_cut, "speech_lengths": lengths}
+                batch_partial = get_partial_data_batch(self.stream_length, speech)
 
         logging.info("speech length: " + str(speech.size(1)))
 
@@ -638,7 +641,7 @@ class Speech2Text_2pass:
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             nbest_hyps = self.beam_search_full(
-                x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, cur_len=cur_len, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio, audio_len=audio_len
+                x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, sys_granularity=self.granularity, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio, audio_len=audio_len
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]

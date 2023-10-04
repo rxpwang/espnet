@@ -348,7 +348,7 @@ class BeamSearchFull(torch.nn.Module):
         return best_hyps
 
     def forward(
-            self, x: torch.Tensor, running_hyps, ended_hyps, cur_len, maxlenratio: float = 0.0, minlenratio: float = 0.0, audio_len: float = 0.0
+            self, x: torch.Tensor, running_hyps, ended_hyps, sys_granularity, maxlenratio: float = 0.0, minlenratio: float = 0.0, audio_len: float = 0.0
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -373,7 +373,7 @@ class BeamSearchFull(torch.nn.Module):
         else:
             maxlen = max(1, int(maxlenratio * x.size(0)))
         minlen = int(minlenratio * x.size(0))
-        logging.info("Start second pass of beam search with full length data, let's see how it works.")
+        logging.info("Start final pass of beam search with full length data: " + str(audio_len / 16000.0) + ", let's see how it works.")
         logging.info("decoder input length: " + str(x.shape[0]))
         logging.info("max output length: " + str(maxlen))
         logging.info("min output length: " + str(minlen))
@@ -411,15 +411,16 @@ class BeamSearchFull(torch.nn.Module):
                 length_predict = maxlen
 
         partial_len = 0
-        granularity = 0.5
-        if audio_len >= 40000:
+        granularity = sys_granularity
+        if audio_len >= 32000:
             chunk = int((audio_len - 32000) / int(granularity * 16000)) - 1
             partial_len = 32000 + chunk * granularity * 16000
         else:
             partial_len = audio_len
-
-        length_predict = float(audio_len) / partial_len * len(reference_hyp.yseq)
-        length_predict = int(length_predict)
+        # ratio length prediction. audio_len / partial_len is the ratio, len ref - 1 exclude the first sos token
+        length_predict = float(audio_len) / partial_len * (len(reference_hyp.yseq)-1)
+        # up round the length prediction
+        length_predict = int(length_predict+1)
 
         logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))
         self.reference_hyp = reference_hyp
@@ -434,13 +435,16 @@ class BeamSearchFull(torch.nn.Module):
         ended_hyps = ended_hyps
         '''
 
-        #for i in range(maxlen):
-        for i in range(length_predict):
+        for i in range(maxlen):
+        #for i in range(length_predict):
             # reduce the beam if best hyp match with reference
             #if self.reference_hyp.yseq[i] == running_hyps[0].yseq[i]:
             #    running_hyps = [running_hyps[0]]
 
             #logging.debug("position " + str(i))
+            if (len(ended_hyps) != 0) & (i >= length_predict):
+                logging.info(f"Ended after have at least 1 ended_hyps and reach the predicted length {length_predict}")
+                break
             logging.info("position " + str(i))
             #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
@@ -448,7 +452,7 @@ class BeamSearchFull(torch.nn.Module):
             # reduce the beam if best hyp match with reference
             if ((i+1) < len(self.reference_hyp.yseq)):
                 # at early stage, we keep all the hyp with match token
-                if i < 5:
+                if (self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]) & (i < 10000000):
                     tmp_list = []
                     for t in range(len(best)):
                         if self.reference_hyp.yseq[i+1] == best[t].yseq[i+1]:
