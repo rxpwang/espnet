@@ -130,10 +130,10 @@ class Speech2Text_npass:
         asr_model, asr_train_args = task.build_model_from_file(
             asr_train_config, asr_model_file, device
         )
-        asr_train_config_pilot = "branchformer_base_encoder9_t1_streaming/config.yaml"
-        asr_model_file_pilot = "branchformer_base_encoder9_t1_streaming/valid.acc.best.pth"
+        #asr_train_config_pilot = "branchformer_base_encoder9_t1_streaming/config.yaml"
+        #asr_model_file_pilot = "branchformer_base_encoder9_t1_streaming/valid.acc.best.pth"
         asr_model_pilot, asr_train_args_pilot = task.build_model_from_file(
-            asr_train_config_pilot, asr_model_file_pilot, device
+            asr_train_config, asr_model_file, device
         )
         #logging.info(f"asr_train_config: {asr_train_config}")
         #logging.info(f"asr_model_file: {asr_model_file}")
