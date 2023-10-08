@@ -5,7 +5,7 @@
 
 import logging
 from typing import List, Optional, Tuple, Union
-
+import time
 import torch
 from typeguard import check_argument_types
 
@@ -317,6 +317,7 @@ class ConformerEncoder(AbsEncoder):
             torch.Tensor: Not to be used now.
 
         """
+        enc_start_time = time.time()
         masks = (~make_pad_mask(ilens)[:, None, :]).to(xs_pad.device)
 
         if (
@@ -337,7 +338,7 @@ class ConformerEncoder(AbsEncoder):
             xs_pad, masks = self.embed(xs_pad, masks)
         else:
             xs_pad = self.embed(xs_pad)
-
+        embed_time = time.time()
         intermediate_outs = []
         if len(self.interctc_layer_idx) == 0:
             xs_pad, masks = self.encoders(xs_pad, masks)
@@ -372,6 +373,8 @@ class ConformerEncoder(AbsEncoder):
             xs_pad = self.after_norm(xs_pad)
 
         olens = masks.squeeze(1).sum(1)
+        encoders_time = time.time()
+        logging.info(f"Total encoding time: {encoders_time - enc_start_time}, Embed time: {embed_time - enc_start_time}, Encoders time: {encoders_time - embed_time}")
         if len(intermediate_outs) > 0:
             return (xs_pad, intermediate_outs), olens, None
         return xs_pad, olens, None

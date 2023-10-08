@@ -14,6 +14,7 @@ Reference:
 import logging
 from typing import List, Optional, Tuple, Union
 
+import time
 import os
 import numpy
 import torch
@@ -819,7 +820,7 @@ class BranchformerEncoder(AbsEncoder):
             torch.Tensor: Not to be used now.
 
         """
-
+        enc_start_time = time.time()
         masks = (~make_pad_mask(ilens)[:, None, :]).to(xs_pad.device)
 
         if (
@@ -840,7 +841,7 @@ class BranchformerEncoder(AbsEncoder):
             xs_pad, masks = self.embed(xs_pad, masks)
         elif self.embed is not None:
             xs_pad = self.embed(xs_pad)
-
+        embed_time = time.time()
         xs_pad, masks = self.encoders(xs_pad, masks)
 
         if isinstance(xs_pad, tuple):
@@ -848,6 +849,8 @@ class BranchformerEncoder(AbsEncoder):
 
         xs_pad = self.after_norm(xs_pad)
         olens = masks.squeeze(1).sum(1)
+        enc_time = time.time()
+        logging.info(f"Total_time: {enc_time - enc_start_time}, embed time: {embed_time - enc_start_time}, encoders time: {enc_time - embed_time}")
         return xs_pad, olens, None
 
 class BranchformerEncoderInf(AbsEncoder):

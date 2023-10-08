@@ -69,12 +69,12 @@ def main():
             print(f"[x] torch cudnn={torch.backends.cudnn.version()}")
         else:
             print("[ ] torch cudnn")
-
+        '''
         if torch.distributed.is_nccl_available():
             print("[x] torch nccl")
         else:
             print("[ ] torch nccl")
-
+        '''
     except ImportError:
         print("[ ] torch")
 

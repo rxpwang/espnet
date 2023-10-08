@@ -455,12 +455,24 @@ class BeamSearch(torch.nn.Module):
             List[Hypothesis]: The new running hypotheses.
 
         """
-        logging.debug(f"the number of running hypotheses: {len(running_hyps)}")
+        logging.info(f"the number of running hypotheses: {len(running_hyps)}")
         if self.token_list is not None:
-            logging.debug(
-                "best hypo: "
-                + "".join([self.token_list[x] for x in running_hyps[0].yseq[1:]])
-            )
+            score_tmp = []
+            scores_tmp_decoder = []
+            scores_tmp_ctc = []
+            for t in range(len(running_hyps)):
+                logging.info(
+                    "best " + str(t+1) + " hypo: "
+                    + "".join([self.token_list[x] for x in running_hyps[t].yseq[1:]])
+                )
+                score_tmp.append(running_hyps[t].score.item())
+                scores_tmp_decoder.append(running_hyps[t].scores['decoder'].item())
+                scores_tmp_ctc.append(running_hyps[t].scores['ctc'].item())
+            score_tmp = torch.Tensor(score_tmp)
+            scores_tmp = dict()
+            scores_tmp['decoder'] = torch.Tensor(scores_tmp_decoder)
+            scores_tmp['ctc'] = torch.Tensor(scores_tmp_ctc)
+            logging.info(f"best score: {score_tmp} best scores: {scores_tmp}")
         # add eos in the final loop to avoid that there are no ended hyps
         if i == maxlen - 1:
             logging.info("adding <eos> in the last position in the loop")
