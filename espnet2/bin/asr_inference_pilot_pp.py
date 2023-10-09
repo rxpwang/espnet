@@ -527,7 +527,7 @@ class Speech2Text_npass:
                 results_partial, running_hyps, ended_hyps, cur_len = self._decode_single_sample_partial(enc[0])
                 #logging.info(f"pilot running_hyps: {running_hyps}")
                 #logging.info(f"pilot ended_hyps: {ended_hyps}")
-                results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, cur_len, audio_len)
+                results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, 1.5, audio_len)
             else:
                 partial_len = 1.5
                 '''
@@ -540,7 +540,7 @@ class Speech2Text_npass:
                 '''
                 enc_partial = self.partial_encoding(partial_len, speech)
                 results_partial, running_hyps, ended_hyps, cur_len = self._decode_single_sample_partial(enc_partial[0])
-                partial_len += self.granularity
+                partial_len += 0.5
 
                 while(partial_len + self.granularity < audio_sec):
                     enc_partial = self.partial_encoding(partial_len, speech)
@@ -548,7 +548,12 @@ class Speech2Text_npass:
                     results_partial, running_hyps, ended_hyps, cur_len = self._decode_single_sample_partial_inc(enc_partial[0], running_hyps, ended_hyps, cur_len, cur_audio_len)
                     partial_len += self.granularity
 
-                results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, cur_len, audio_len)
+                if partial_len > 2:
+                    partial_len -= self.granularity
+                else:
+                    partial_len = 1.5
+
+                results = self._decode_single_sample_full(enc[0], running_hyps, ended_hyps, partial_len, audio_len)
 
 
 
@@ -615,7 +620,7 @@ class Speech2Text_npass:
 
         results = []
         for hyp in nbest_hyps:
-            assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
+            #assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
 
             # remove sos/eos and get results
             last_pos = None if self.asr_model.use_transducer_decoder else -1
@@ -686,7 +691,7 @@ class Speech2Text_npass:
 
         results = []
         for hyp in nbest_hyps:
-            assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
+            #assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
 
             # remove sos/eos and get results
             last_pos = None if self.asr_model.use_transducer_decoder else -1
@@ -709,7 +714,7 @@ class Speech2Text_npass:
 
         return results, running_hyps, ended_hyps, cur_len
 
-    def _decode_single_sample_full(self, enc: torch.Tensor, running_hyps, ended_hyps, cur_len, audio_len):
+    def _decode_single_sample_full(self, enc: torch.Tensor, running_hyps, ended_hyps, partial_len, audio_len):
         if self.beam_search_transducer:
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
@@ -749,7 +754,7 @@ class Speech2Text_npass:
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             nbest_hyps = self.beam_search_full(
-                x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, sys_granularity=self.granularity, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio, audio_len=audio_len
+                x=enc, running_hyps=running_hyps, ended_hyps=ended_hyps, sys_granularity=self.granularity, sys_partial_len=partial_len,maxlenratio=self.maxlenratio, minlenratio=self.minlenratio, audio_len=audio_len
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]

@@ -5,6 +5,7 @@ from itertools import chain
 from typing import Any, Dict, List, NamedTuple, Tuple, Union
 
 import torch
+import copy
 
 from espnet.nets.e2e_asr_common import end_detect
 from espnet.nets.scorer_interface import PartialScorerInterface, ScorerInterface
@@ -17,6 +18,7 @@ class Hypothesis(NamedTuple):
     score: Union[float, torch.Tensor] = 0
     scores: Dict[str, Union[float, torch.Tensor]] = dict()
     states: Dict[str, Any] = dict()
+    score_history: Dict[str, Union[float, torch.Tensor]] = dict()
 
     def asdict(self) -> dict:
         """Convert data to JSON-friendly dict."""
@@ -24,6 +26,7 @@ class Hypothesis(NamedTuple):
             yseq=self.yseq.tolist(),
             score=float(self.score),
             scores={k: float(v) for k, v in self.scores.items()},
+            score_history={k: float(v) for k, v in self.scores.items()},
         )._asdict()
 
 
@@ -130,9 +133,12 @@ class BeamSearchPilot(torch.nn.Module):
         """
         init_states = dict()
         init_scores = dict()
+        init_scores_history = dict()
+
         for k, d in self.scorers.items():
             init_states[k] = d.init_state(x)
             init_scores[k] = 0.0
+            init_scores_history[k] = torch.zeros(15)
 
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
@@ -143,6 +149,7 @@ class BeamSearchPilot(torch.nn.Module):
                 scores=init_scores,
                 states=init_states,
                 yseq=torch.tensor(primer, device=x.device),
+                score_history=init_scores_history,
             )
         ]
 
@@ -290,6 +297,34 @@ class BeamSearchPilot(torch.nn.Module):
             new_states[k] = d.select_state(part_states[k], part_idx)
         return new_states
 
+    @staticmethod
+    def merge_score_history(hyp, next_full_scores, full_idx, next_part_scores, part_idx) -> Dict[str, torch.Tensor]:
+        """
+        Add new token score into the score history
+
+        Args:
+            hyp: previous hypothesis
+            scores: scores by 'self.full_scorers'
+            full_idx: the next token id for 'next_full_scores'
+            part_scores: scores of partial tokens by 'self.part_scorers'
+            part_idx: the new token id for 'next_part_scores'
+
+        Returns:
+            Dict[str, torch.Tensor]: the new score dict
+            Its keys are names of `self.full_scorers` and `self.part_scorers`.
+            Its values are tensor array that record the score history
+        """
+        new_scores = copy.deepcopy(hyp.score_history)
+
+        token_idx = len(hyp.yseq) - 1
+        for k, v in next_full_scores.items():
+            new_scores[k][token_idx] = v[full_idx]
+        for k, v in next_part_scores.items():
+            new_scores[k][token_idx] = v[part_idx]
+        return new_scores
+
+
+
     def search(
         self, running_hyps: List[Hypothesis], x: torch.Tensor
     ) -> List[Hypothesis]:
@@ -336,6 +371,7 @@ class BeamSearchPilot(torch.nn.Module):
                             hyp.scores, scores, j, part_scores, part_j
                         ),
                         states=self.merge_states(states, part_states, part_j),
+                        score_history=self.merge_score_history(hyp, scores, j, part_scores, part_j),
                     )
                 )
 

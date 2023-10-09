@@ -578,7 +578,7 @@ class Speech2Text_2pass:
 
         results = []
         for hyp in nbest_hyps:
-            assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
+            #assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
 
             # remove sos/eos and get results
             last_pos = None if self.asr_model.use_transducer_decoder else -1

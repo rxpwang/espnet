@@ -7,8 +7,9 @@ import torch
 from packaging.version import parse as V
 from torch.nn.utils.rnn import pad_sequence
 
-from espnet.nets.beam_search import BeamSearch, Hypothesis
-from espnet.nets.beam_search_pilot import BeamSearchPilot
+#from espnet.nets.beam_search import BeamSearch, Hypothesis
+from espnet.nets.beam_search import BeamSearch
+from espnet.nets.beam_search_pilot import BeamSearchPilot, Hypothesis
 
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
 
@@ -21,6 +22,7 @@ class BatchHypothesis(NamedTuple):
     length: torch.Tensor = torch.tensor([])  # (batch,)
     scores: Dict[str, torch.Tensor] = dict()  # values: (batch,)
     states: Dict[str, Dict] = dict()
+    score_history: Dict[str, torch.Tensor] = dict() # values: (batch, 15,)
 
     def __len__(self) -> int:
         """Return a batch size."""
@@ -42,6 +44,7 @@ class BatchBeamSearchPilot(BeamSearchPilot):
             score=torch.tensor([h.score for h in hyps]),
             scores={k: torch.tensor([h.scores[k] for h in hyps]) for k in self.scorers},
             states={k: [h.states[k] for h in hyps] for k in self.scorers},
+            score_history={k: torch.stack([h.score_history[k] for h in hyps]) for k in self.scorers},
         )
 
     def _batch_select(self, hyps: BatchHypothesis, ids: List[int]) -> BatchHypothesis:
@@ -54,6 +57,7 @@ class BatchBeamSearchPilot(BeamSearchPilot):
                 k: [self.scorers[k].select_state(v, i) for i in ids]
                 for k, v in hyps.states.items()
             },
+            score_history={k: v[ids] for k, v in hyps.score_history.items()},
         )
 
     def _select(self, hyps: BatchHypothesis, i: int) -> Hypothesis:
@@ -64,6 +68,7 @@ class BatchBeamSearchPilot(BeamSearchPilot):
             states={
                 k: self.scorers[k].select_state(v, i) for k, v in hyps.states.items()
             },
+            score_history={k: v[i] for k, v in hyps.score_history.items()},
         )
 
     def unbatchfy(self, batch_hyps: BatchHypothesis) -> List[Hypothesis]:
@@ -77,6 +82,7 @@ class BatchBeamSearchPilot(BeamSearchPilot):
                     k: v.select_state(batch_hyps.states[k], i)
                     for k, v in self.scorers.items()
                 },
+                score_history={k: batch_hyps.score_history[k][i] for k in self.scorers},
             )
             for i in range(len(batch_hyps.length))
         ]
@@ -122,9 +128,12 @@ class BatchBeamSearchPilot(BeamSearchPilot):
         """
         init_states = dict()
         init_scores = dict()
+        init_score_history = dict()
+
         for k, d in self.scorers.items():
             init_states[k] = d.batch_init_state(x)
             init_scores[k] = 0.0
+            init_score_history[k] = torch.zeros(15)
 
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
@@ -145,6 +154,7 @@ class BatchBeamSearchPilot(BeamSearchPilot):
                     scores=init_scores,
                     states=init_states,
                     yseq=torch.tensor(primer, device=x.device),
+                    score_history=init_score_history,
                 )]
 
 
@@ -293,6 +303,13 @@ class BatchBeamSearchPilot(BeamSearchPilot):
                             )
                             for k, v in part_states.items()
                         },
+                        part_new_token_id,
+                    ),
+                    score_history=self.merge_score_history(
+                        prev_hyp,
+                        {k: v[full_prev_hyp_id] for k, v in scores.items()},
+                        full_new_token_id,
+                        {k: v[part_prev_hyp_id] for k, v in part_scores.items()},
                         part_new_token_id,
                     ),
                 )

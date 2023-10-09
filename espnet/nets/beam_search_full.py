@@ -348,7 +348,7 @@ class BeamSearchFull(torch.nn.Module):
         return best_hyps
 
     def forward(
-            self, x: torch.Tensor, running_hyps, ended_hyps, sys_granularity, maxlenratio: float = 0.0, minlenratio: float = 0.0, audio_len: float = 0.0
+            self, x: torch.Tensor, running_hyps, ended_hyps, sys_granularity, sys_partial_len, maxlenratio: float = 0.0, minlenratio: float = 0.0, audio_len: float = 0.0
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -410,19 +410,23 @@ class BeamSearchFull(torch.nn.Module):
                 reference_hyp = prev_ended_hyps[0]
                 length_predict = maxlen
 
-        partial_len = 0
+        partial_len = sys_partial_len
         granularity = sys_granularity
+        '''
         if audio_len >= 32000:
             chunk = int((audio_len - 32000) / int(granularity * 16000)) - 1
             partial_len = 32000 + chunk * granularity * 16000
         else:
             partial_len = audio_len
+        '''
         # ratio length prediction. audio_len / partial_len is the ratio, len ref - 1 exclude the first sos token
         length_predict = float(audio_len) / partial_len * (len(reference_hyp.yseq)-1)
         # up round the length prediction
         length_predict = int(length_predict+1)
 
         logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))
+        logging.info(f"Reference hyp score: {reference_hyp.score_history}")
+        logging.info(f"Latest partial data length: {partial_len}")
         self.reference_hyp = reference_hyp
 
         # main loop of full search
