@@ -850,7 +850,7 @@ class BranchformerEncoder(AbsEncoder):
         xs_pad = self.after_norm(xs_pad)
         olens = masks.squeeze(1).sum(1)
         enc_time = time.time()
-        logging.info(f"Total_time: {enc_time - enc_start_time}, embed time: {embed_time - enc_start_time}, encoders time: {enc_time - embed_time}")
+        #logging.info(f"Total_time: {enc_time - enc_start_time}, embed time: {embed_time - enc_start_time}, encoders time: {enc_time - embed_time}")
         return xs_pad, olens, None
 
 class BranchformerEncoderInf(AbsEncoder):

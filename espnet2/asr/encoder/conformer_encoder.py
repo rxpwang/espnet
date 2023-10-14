@@ -374,7 +374,7 @@ class ConformerEncoder(AbsEncoder):
 
         olens = masks.squeeze(1).sum(1)
         encoders_time = time.time()
-        logging.info(f"Total encoding time: {encoders_time - enc_start_time}, Embed time: {embed_time - enc_start_time}, Encoders time: {encoders_time - embed_time}")
+        #logging.info(f"Total encoding time: {encoders_time - enc_start_time}, Embed time: {embed_time - enc_start_time}, Encoders time: {encoders_time - embed_time}")
         if len(intermediate_outs) > 0:
             return (xs_pad, intermediate_outs), olens, None
         return xs_pad, olens, None
