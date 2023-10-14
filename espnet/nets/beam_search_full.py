@@ -420,9 +420,9 @@ class BeamSearchFull(torch.nn.Module):
             partial_len = audio_len
         '''
         # ratio length prediction. audio_len / partial_len is the ratio, len ref - 1 exclude the first sos token
-        length_predict = float(audio_len) / partial_len * (len(reference_hyp.yseq)-1)
+        length_predict = (float(audio_len) / 16000) / partial_len * (len(reference_hyp.yseq)-1)
         # up round the length prediction
-        length_predict = int(length_predict+1)
+        length_predict = int(length_predict+3)
 
         logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))
         logging.info(f"Reference hyp score: {reference_hyp.score_history}")
@@ -456,7 +456,7 @@ class BeamSearchFull(torch.nn.Module):
             # reduce the beam if best hyp match with reference
             if ((i+1) < len(self.reference_hyp.yseq)):
                 # at early stage, we keep all the hyp with match token
-                if (self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]) & (i < 10000000):
+                if (self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]) & (i < -10000000):
                     tmp_list = []
                     for t in range(len(best)):
                         if self.reference_hyp.yseq[i+1] == best[t].yseq[i+1]:
