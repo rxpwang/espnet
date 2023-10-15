@@ -466,7 +466,14 @@ class BeamSearchFull(torch.nn.Module):
                 else:
                     if self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]:
                         best = [best[0]]
-
+            # reduce the beam size to 3 if the beam larger than 3 & all the new hypo develop from the same one
+            if len(best) > 3:
+                beam_reduce_flag = 1
+                for p in range(len(best)-1):
+                    if best[p+1].yseq[:i+1].equal(best[0].yseq[:i+1]) == False:
+                        beam_reduce_flag = 0
+                if beam_reduce_flag == 1:
+                    best = best[:3]
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
             # end detection
