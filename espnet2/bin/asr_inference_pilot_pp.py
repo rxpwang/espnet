@@ -270,6 +270,14 @@ class Speech2Text_npass:
                 length_bonus=penalty,
             )
 
+            weights_pilot = dict(
+                decoder=0.5,
+                ctc=0.5,
+                lm=lm_weight,
+                ngram=ngram_weight,
+                length_bonus=penalty,
+            )
+
             if time_sync:
                 if not hasattr(asr_model, "ctc"):
                     raise NotImplementedError(
@@ -303,7 +311,7 @@ class Speech2Text_npass:
 
                 beam_search_pilot = BeamSearchPilot(
                     beam_size=beam_size_pilot,
-                    weights=weights,
+                    weights=weights_pilot,
                     scorers=scorers,
                     sos=asr_model.sos,
                     eos=asr_model.eos,
@@ -315,7 +323,7 @@ class Speech2Text_npass:
 
                 beam_search_pilot_inc = BeamSearchPilotInc(
                     beam_size=beam_size_pilot,
-                    weights=weights,
+                    weights=weights_pilot,
                     scorers=scorers,
                     sos=asr_model.sos,
                     eos=asr_model.eos,

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, NamedTuple, Tuple, Union
 
 import torch
 
-from espnet.nets.e2e_asr_common import end_detect
+from espnet.nets.e2e_asr_common import end_detect, end_detect_transformer
 from espnet.nets.scorer_interface import PartialScorerInterface, ScorerInterface
 
 
@@ -477,9 +477,19 @@ class BeamSearchFull(torch.nn.Module):
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
             # end detection
-            if maxlenratio == 0.0 and end_detect([h.asdict() for h in ended_hyps], i):
-                logging.info(f"end detected at {i}")
-                break
+            if ('ctc' in self.weights.keys()):
+                if (self.weights['ctc'] != 0):
+                    if maxlenratio == 0.0 and end_detect([h.asdict() for h in ended_hyps], i):
+                        logging.info(f"end detected at {i}")
+                        break
+                else:
+                    if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                        logging.info(f"transformer-only end detected at {i}")
+                        break
+            else:
+                if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                    logging.info(f"transformer-only end detected at {i}")
+                    break
             if len(running_hyps) == 0:
                 logging.info("no hypothesis. Finish decoding.")
                 break
