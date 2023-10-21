@@ -386,29 +386,29 @@ class BeamSearchFull(torch.nn.Module):
         if len(prev_ended_hyps) != 0:
             prev_ended_hyps = sorted(prev_ended_hyps, key=lambda x: x.score, reverse=True)
         reference_hyp = None
-
+        length_add = 0
         length_predict = 0
         if (len(prev_running_hyps) == 0) and (len(prev_ended_hyps) == 0):
             logging.info(f"No running and ended hyps from pilot decoding.")
         elif len(prev_running_hyps) == 0:
             logging.info(f"No running hyps from pilot decoding, take ended best hyp as reference.")
             reference_hyp = prev_ended_hyps[0]
-            length_predict = maxlen
+            length_add = 0
         elif len(prev_ended_hyps) == 0:
             logging.info(f"No ended hyps from pilot decoding, take running best hyp as reference.")
             reference_hyp = prev_running_hyps[0]
             #length_predict = len(reference_hyp.yseq) + 3
-            length_predict = maxlen
+            length_add = 10
         else:
             if prev_running_hyps[0].score > prev_ended_hyps[0].score:
                 logging.info(f"Choose from pilot running and ended hyps... Take running best.")
                 reference_hyp = prev_running_hyps[0]
                 #length_predict = len(reference_hyp.yseq) + 3
-                length_predict = maxlen
+                length_add = 4
             else:
                 logging.info(f"Choose from pilot running and ended hyps... Take ended best.")
                 reference_hyp = prev_ended_hyps[0]
-                length_predict = maxlen
+                length_add = 2
 
         partial_len = sys_partial_len
         granularity = sys_granularity
@@ -423,6 +423,7 @@ class BeamSearchFull(torch.nn.Module):
         length_predict = (float(audio_len) / 16000) / partial_len * (len(reference_hyp.yseq)-1)
         # up round the length prediction
         length_predict = int(length_predict+3)
+        #length_predict = int(len(reference_hyp.yseq) + length_add)
 
         logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))
         logging.info(f"Reference hyp score: {reference_hyp.score_history}")
@@ -483,11 +484,11 @@ class BeamSearchFull(torch.nn.Module):
                         logging.info(f"end detected at {i}")
                         break
                 else:
-                    if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                    if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i, beam_size=self.beam_size):
                         logging.info(f"transformer-only end detected at {i}")
                         break
             else:
-                if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i, beam_size=self.beam_size):
                     logging.info(f"transformer-only end detected at {i}")
                     break
             if len(running_hyps) == 0:

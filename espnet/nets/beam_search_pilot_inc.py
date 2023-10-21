@@ -459,11 +459,11 @@ class BeamSearchPilotInc(torch.nn.Module):
                         logging.info(f"end detected at {i}")
                         break
                 else:
-                    if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                    if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i, beam_size=self.beam_size):
                         logging.info(f"transformer-only end detected at {i}")
                         break
             else:
-                if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i):
+                if maxlenratio == 0.0 and end_detect_transformer([h.asdict() for h in ended_hyps], i, beam_size=self.beam_size):
                     logging.info(f"transformer-only end detected at {i}")
                     break
 
