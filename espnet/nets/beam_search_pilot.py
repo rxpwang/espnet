@@ -19,6 +19,8 @@ class Hypothesis(NamedTuple):
     scores: Dict[str, Union[float, torch.Tensor]] = dict()
     states: Dict[str, Any] = dict()
     score_history: Dict[str, Union[float, torch.Tensor]] = dict()
+    ctc_state_history: Dict[str, List[Any]] = dict()
+    part_id_history: List[Any] = []
 
     def asdict(self) -> dict:
         """Convert data to JSON-friendly dict."""
@@ -27,6 +29,8 @@ class Hypothesis(NamedTuple):
             score=float(self.score),
             scores={k: float(v) for k, v in self.scores.items()},
             score_history={k: float(v) for k, v in self.scores.items()},
+            ctc_state_history={'ctc': self.ctc_state_history['ctc']},
+            part_id_history=self.part_id_history,
         )._asdict()
 
 
@@ -134,12 +138,13 @@ class BeamSearchPilot(torch.nn.Module):
         init_states = dict()
         init_scores = dict()
         init_scores_history = dict()
+        init_ctc_state_history = dict()
 
         for k, d in self.scorers.items():
             init_states[k] = d.init_state(x)
             init_scores[k] = 0.0
             init_scores_history[k] = torch.zeros(15)
-
+        init_ctc_state_history['ctc'] = [copy.deepcopy(init_states['ctc'])]
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
 
@@ -150,6 +155,8 @@ class BeamSearchPilot(torch.nn.Module):
                 states=init_states,
                 yseq=torch.tensor(primer, device=x.device),
                 score_history=init_scores_history,
+                ctc_state_history=init_ctc_state_history,
+                part_id_history=[],
             )
         ]
 
@@ -363,6 +370,10 @@ class BeamSearchPilot(torch.nn.Module):
             # update hyps
             for j, part_j in zip(*self.beam(weighted_scores, part_ids)):
                 # will be (2 x beam at most)
+                tmp_part_id_history = copy.deepcopy(hyp.part_id_history)
+                tmp_part_id_history.append(part_ids)
+                tmp_ctc_state_history = copy.deepcopy(hyp.ctc_state_history)
+                tmp_ctc_state_history['ctc'].append(part_states['ctc'][0])
                 best_hyps.append(
                     Hypothesis(
                         score=weighted_scores[j],
@@ -372,9 +383,12 @@ class BeamSearchPilot(torch.nn.Module):
                         ),
                         states=self.merge_states(states, part_states, part_j),
                         score_history=self.merge_score_history(hyp, scores, j, part_scores, part_j),
+                        ctc_state_history=tmp_ctc_state_history,
+                        part_id_history=tmp_part_id_history,
                     )
                 )
-
+            #for tmp_hyp in best_hyps:
+            #    tmp_hyp.ctc_state_history['ctc'].append(copy.deepcopy(part_states['ctc']))
             # sort and prune 2 x beam -> beam
             best_hyps = sorted(best_hyps, key=lambda x: x.score, reverse=True)[
                 : min(len(best_hyps), self.beam_size)
@@ -423,6 +437,8 @@ class BeamSearchPilot(torch.nn.Module):
             cur_len = i
             #logging.info(f"running_hyps: {running_hyps}")
             best = self.search(running_hyps, x)
+            #logging.info(f"ctc_state_history check: len {best[0].ctc_state_history['ctc']}")
+            #logging.info(f"ctc_state_history check: {[best[0].ctc_state_history['ctc'][-1][p] == best[0].states['ctc'][p] for p in [0, 1, 2, 3]] }")
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
             # end detection

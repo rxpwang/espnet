@@ -98,7 +98,7 @@ class CTCPrefixScorer(BatchPartialScorerInterface):
         self.impl = CTCPrefixScoreTH(logp, xlen, 0, self.eos)
         return None
 
-    def batch_score_partial(self, y, ids, state, x):
+    def batch_score_partial(self, y, ids, state, x, partial_state=None):
         """Score new token.
 
         Args:
@@ -123,7 +123,7 @@ class CTCPrefixScorer(BatchPartialScorerInterface):
             if state[0] is not None
             else None
         )
-        return self.impl(y, batch_state, ids)
+        return self.impl(y, batch_state, ids, partial_state=partial_state)
 
     def extend_prob(self, x: torch.Tensor):
         """Extend probs for decoding.

@@ -341,7 +341,7 @@ class BatchBeamSearch(BeamSearch):
             running_hyps.yseq.resize_as_(yseq_eos)
             running_hyps.yseq[:] = yseq_eos
             running_hyps.length[:] = yseq_eos.shape[1]
-
+        #logging.info(f"batch_state example: {running_hyps.states}")
         # add ended hypotheses to a final list, and removed them from current hypotheses
         # (this will be a probmlem, number of hyps < beam)
         is_eos = (

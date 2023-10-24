@@ -70,7 +70,8 @@ class BeamSearchFull(torch.nn.Module):
 
         # set placeholder for reference hyp
         self.reference_hyp = None
-
+        self.cur_beam_size = beam_size
+        self.cur_token_len = 0
         # this module dict is required for recursive cast
         # `self.to(device, dtype)` in `recog.py`
         self.nn_dict = torch.nn.ModuleDict()
@@ -452,8 +453,9 @@ class BeamSearchFull(torch.nn.Module):
                 break
             logging.info("position " + str(i))
             #logging.info(f"running_hyps: {running_hyps}")
+            self.cur_token_len = i
             best = self.search(running_hyps, x)
-
+            self.cur_beam_size = len(best)
             # reduce the beam if best hyp match with reference
             if ((i+1) < len(self.reference_hyp.yseq)):
                 # at early stage, we keep all the hyp with match token
@@ -467,6 +469,7 @@ class BeamSearchFull(torch.nn.Module):
                 else:
                     if self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]:
                         best = [best[0]]
+                        self.cur_beam_size = 1
             # reduce the beam size to 3 if the beam larger than 3 & all the new hypo develop from the same one
             if len(best) > 3:
                 beam_reduce_flag = 1

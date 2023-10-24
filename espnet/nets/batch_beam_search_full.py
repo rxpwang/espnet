@@ -2,7 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, NamedTuple, Tuple
-
+import numpy as np
 import torch
 from packaging.version import parse as V
 from torch.nn.utils.rnn import pad_sequence
@@ -172,7 +172,7 @@ class BatchBeamSearchFull(BeamSearchFull):
         return scores, states
 
     def score_partial(
-        self, hyp: BatchHypothesis, ids: torch.Tensor, x: torch.Tensor
+        self, hyp: BatchHypothesis, ids: torch.Tensor, x: torch.Tensor, pilot=False
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
         """Score new hypothesis by `self.full_scorers`.
 
@@ -189,11 +189,39 @@ class BatchBeamSearchFull(BeamSearchFull):
                 and state values of `self.full_scorers`
 
         """
+        #logging.info(f"full part ids: {ids[0]}")
+        #logging.info(f"pilot part ids: {self.reference_hyp.part_id_history[self.cur_token_len + 1]}")
+
+        #if (self.cur_token_len < len(self.reference_hyp.part_id_history)):
+        #   logging.info(f"pilot part ids: {self.reference_hyp.part_id_history[self.cur_token_len]}")
+        #   set1 = set(ids[0].numpy())
+        #   set2 = set(self.reference_hyp.part_id_history[self.cur_token_len].numpy())
+        #   common_elements = list(set1.intersection(set2))
+        #   logging.info(f"intersection lens: {len(common_elements)}")
+
         scores = dict()
         states = dict()
+        if pilot == True:
+            #indices = torch.where(torch.isin(self.reference_hyp.part_id_history[self.cur_token_len], ids[0]))
+            #indices = []
+            tmp_part_id_history = self.reference_hyp.part_id_history[self.cur_token_len]
+            '''
+            for k in range(len(ids[0])):
+                for m in range(len(tmp_part_id_history)):
+                    if ids[0][k] == tmp_part_id_history[m]:
+                        indices.append(m)
+                        break
+            '''
+            indices = torch.tensor([torch.where(tmp_part_id_history == elem)[0][0] for elem in ids[0]])
+            #logging.info(f"indices for the state: {indices}")
+            #logging.info(f"indices for the state: {indices}")
+            #logging.info(f"shape of the state: {self.reference_hyp.ctc_state_history['ctc'][self.cur_token_len + 1].size()}")
+            partial_states = self.reference_hyp.ctc_state_history['ctc'][self.cur_token_len + 1][:,:,:,torch.tensor(indices)]
+        else:
+            partial_states = None
         for k, d in self.part_scorers.items():
             scores[k], states[k] = d.batch_score_partial(
-                hyp.yseq, ids, hyp.states[k], x
+                hyp.yseq, ids, hyp.states[k], x, partial_state=partial_states
             )
         return scores, states
 
@@ -239,6 +267,7 @@ class BatchBeamSearchFull(BeamSearchFull):
         scores, states = self.score_full(running_hyps, x.expand(n_batch, *x.shape))
         for k in self.full_scorers:
             weighted_scores += self.weights[k] * scores[k]
+        logging.info(f"Full scorer finished, start to do partial.")
         # partial scoring
         if self.do_pre_beam:
             pre_beam_scores = (
@@ -246,11 +275,28 @@ class BatchBeamSearchFull(BeamSearchFull):
                 if self.pre_beam_score_key == "full"
                 else scores[self.pre_beam_score_key]
             )
+            self.pre_beam_size=10
             part_ids = torch.topk(pre_beam_scores, self.pre_beam_size, dim=-1)[1]
+            #logging.info(f"part ids: {part_ids}")
         # NOTE(takaaki-hori): Unlike BeamSearch, we assume that score_partial returns
         # full-size score matrices, which has non-zero scores for part_ids and zeros
         # for others.
-        part_scores, part_states = self.score_partial(running_hyps, part_ids, x)
+        # For pilot ctc prefix scoring speedup.
+        # check: 1. if the beam is reduced
+        #        2. if the reference hyp can cover the token
+        #        3. if there are enough similar pre-beam token that pilot ctc and full ctc share
+        # if all the requirement meet, then conduct pilot speedup ctc prefix scoring
+        flag_partial_score = False
+        if self.cur_beam_size == 1:
+            if (self.cur_token_len < len(self.reference_hyp.part_id_history)) and (self.cur_token_len > 0):
+                intersect_id = np.intersect1d(part_ids[0], self.reference_hyp.part_id_history[self.cur_token_len])
+                if len(intersect_id) >= 7:
+                    part_ids = torch.from_numpy(intersect_id).unsqueeze(0)
+                    part_scores, part_states = self.score_partial(running_hyps, part_ids, x, pilot=True)
+                    flag_partial_score = True
+        if flag_partial_score == False:
+            part_ids = part_ids[:,:7]
+            part_scores, part_states = self.score_partial(running_hyps, part_ids, x)
         for k in self.part_scorers:
             weighted_scores += self.weights[k] * part_scores[k]
         # add previous hyp scores

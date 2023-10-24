@@ -2,7 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, NamedTuple, Tuple
-
+import copy
 import torch
 from packaging.version import parse as V
 from torch.nn.utils.rnn import pad_sequence
@@ -23,6 +23,8 @@ class BatchHypothesis(NamedTuple):
     scores: Dict[str, torch.Tensor] = dict()  # values: (batch,)
     states: Dict[str, Dict] = dict()
     score_history: Dict[str, torch.Tensor] = dict() # values: (batch, 15,)
+    ctc_state_history: Dict[str, List[Dict]] = dict()
+    part_id_history: List[Any] = []
 
     def __len__(self) -> int:
         """Return a batch size."""
@@ -45,6 +47,8 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
             scores={k: torch.tensor([h.scores[k] for h in hyps]) for k in self.scorers},
             states={k: [h.states[k] for h in hyps] for k in self.scorers},
             score_history={k: torch.stack([h.score_history[k] for h in hyps]) for k in self.scorers},
+            ctc_state_history={'ctc':[copy.deepcopy(h.ctc_state_history['ctc']) for h in hyps]},
+            part_id_history=[h.part_id_history for h in hyps],
         )
 
     def _batch_select(self, hyps: BatchHypothesis, ids: List[int]) -> BatchHypothesis:
@@ -58,6 +62,8 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                 for k, v in hyps.states.items()
             },
             score_history={k: v[ids] for k, v in hyps.score_history.items()},
+            ctc_state_history={'ctc': [copy.deepcopy(hyps.ctc_state_history['ctc'][id_tmp]) for id_tmp in ids]},
+            part_id_history=[hyps.part_id_history[id_tmp] for id_tmp in ids],
         )
 
     def _select(self, hyps: BatchHypothesis, i: int) -> Hypothesis:
@@ -69,6 +75,8 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                 k: self.scorers[k].select_state(v, i) for k, v in hyps.states.items()
             },
             score_history={k: v[i] for k, v in hyps.score_history.items()},
+            ctc_state_history={'ctc': hyps.ctc_state_history['ctc'][i]},
+            part_id_history=hyps.part_id_history[i],
         )
 
     def unbatchfy(self, batch_hyps: BatchHypothesis) -> List[Hypothesis]:
@@ -83,6 +91,8 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                     for k, v in self.scorers.items()
                 },
                 score_history={k: batch_hyps.score_history[k][i] for k in self.scorers},
+                ctc_state_history={'ctc': batch_hyps.ctc_state_history['ctc'][i]},
+                part_id_history=batch_hyps.part_id_history[i],
             )
             for i in range(len(batch_hyps.length))
         ]
@@ -129,11 +139,15 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
         init_states = dict()
         init_scores = dict()
         init_score_history = dict()
+        init_ctc_state_history = dict()
+        init_part_id_history = []
 
         for k, d in self.scorers.items():
             init_states[k] = d.batch_init_state(x)
             init_scores[k] = 0.0
             init_score_history[k] = torch.zeros(15)
+
+        init_ctc_state_history['ctc'] = [copy.deepcopy(init_states['ctc'])]
 
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
@@ -155,6 +169,8 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                     states=init_states,
                     yseq=torch.tensor(primer, device=x.device),
                     score_history=init_score_history,
+                    ctc_state_history=init_ctc_state_history,
+                    part_id_history=init_part_id_history,
                 )]
 
 
@@ -257,7 +273,9 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                 if self.pre_beam_score_key == "full"
                 else scores[self.pre_beam_score_key]
             )
+            self.pre_beam_size=10
             part_ids = torch.topk(pre_beam_scores, self.pre_beam_size, dim=-1)[1]
+            #logging.info(f"part ids: {part_ids}")
         # NOTE(takaaki-hori): Unlike BeamSearch, we assume that score_partial returns
         # full-size score matrices, which has non-zero scores for part_ids and zeros
         # for others.
@@ -281,6 +299,14 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
             part_new_token_id,
         ) in zip(*self.batch_beam(weighted_scores, part_ids)):
             prev_hyp = prev_hyps[full_prev_hyp_id]
+            tmp_ctc_state_history = copy.deepcopy(prev_hyp.ctc_state_history)
+            if part_states['ctc'] != None:
+                tmp_ctc_state_history['ctc'].append(part_states['ctc'][0][:,:, part_prev_hyp_id,:].unsqueeze(2))
+            else:
+                tmp_ctc_state_history['ctc'].append(None)
+            tmp_part_id_history = copy.deepcopy(prev_hyp.part_id_history)
+            tmp_part_id_history.append(part_ids[part_prev_hyp_id])
+
             best_hyps.append(
                 Hypothesis(
                     score=weighted_scores[full_prev_hyp_id, full_new_token_id],
@@ -312,9 +338,16 @@ class BatchBeamSearchPilotInc(BeamSearchPilotInc):
                         {k: v[part_prev_hyp_id] for k, v in part_scores.items()},
                         part_new_token_id,
                     ),
+                    ctc_state_history=tmp_ctc_state_history,
+                    part_id_history=tmp_part_id_history,
                 )
             )
+        #for hyp in best_hyps:
+        #    hyp.ctc_state_history['ctc'].append(copy.deepcopy(part_states['ctc']))
         #return self.batchfy(best_hyps)
+        #if best_hyps[0].ctc_state_history['ctc'][-1] != None:
+        #    logging.info(f"ctc state history content: {best_hyps[0].ctc_state_history['ctc'][-1].size()}")
+        #    logging.info(f"part id history content: {best_hyps[0].part_id_history}")
         return best_hyps
 
     def post_process(

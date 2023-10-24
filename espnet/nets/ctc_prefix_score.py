@@ -5,7 +5,7 @@
 
 import numpy as np
 import torch
-
+import logging
 
 class CTCPrefixScoreTH(object):
     """Batch processing of CTCPrefixScore
@@ -64,7 +64,7 @@ class CTCPrefixScoreTH(object):
         self.idx_b = torch.arange(self.batch, device=self.device)
         self.idx_bo = (self.idx_b * self.odim).unsqueeze(1)
 
-    def __call__(self, y, state, scoring_ids=None, att_w=None):
+    def __call__(self, y, state, scoring_ids=None, att_w=None, partial_state=None):
         """Compute CTC prefix scores for next labels
 
         :param list y: prefix label sequences
@@ -150,15 +150,25 @@ class CTCPrefixScoreTH(object):
             f_min = f_max = 0
             start = max(output_length, 1)
             end = self.input_length
-
+        #logging.info(f"r shape: {r.size()}")
         # compute forward probabilities log(r_t^n(h)) and log(r_t^b(h))
-        for t in range(start, end):
-            rp = r[t - 1]
-            rr = torch.stack([rp[0], log_phi[t - 1], rp[0], rp[1]]).view(
-                2, 2, n_bh, snum
-            )
-            r[t] = torch.logsumexp(rr, 1) + x_[:, t]
-
+        if partial_state == None:
+            for t in range(start, end):
+                rp = r[t - 1]
+                rr = torch.stack([rp[0], log_phi[t - 1], rp[0], rp[1]]).view(
+                    2, 2, n_bh, snum
+                )
+                r[t] = torch.logsumexp(rr, 1) + x_[:, t]
+        else:
+            start1 = int(len(partial_state) * 3 / 4.0)
+            r[:start1] = partial_state[:start1]
+            for t in range(start1, end):
+                rp = r[t - 1]
+                rr = torch.stack([rp[0], log_phi[t - 1], rp[0], rp[1]]).view(
+                    2, 2, n_bh, snum
+                )
+                r[t] = torch.logsumexp(rr, 1) + x_[:, t]
+        #logging.info(f"r shape: {r.size()}")
         # compute log prefix probabilities log(psi)
         log_phi_x = torch.cat((log_phi[0].unsqueeze(0), log_phi[:-1]), dim=0) + x_[0]
         if scoring_ids is not None:
