@@ -423,7 +423,7 @@ class BeamSearchFull(torch.nn.Module):
         # ratio length prediction. audio_len / partial_len is the ratio, len ref - 1 exclude the first sos token
         length_predict = (float(audio_len) / 16000) / partial_len * (len(reference_hyp.yseq)-1)
         # up round the length prediction
-        length_predict = int(length_predict+3)
+        length_predict = int(length_predict+5)
         #length_predict = int(len(reference_hyp.yseq) + length_add)
 
         logging.info("Reference hyp: " + " ".join([self.token_list[x] for x in reference_hyp.yseq[0:]]))

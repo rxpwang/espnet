@@ -288,7 +288,7 @@ class BatchBeamSearchFull(BeamSearchFull):
         # if all the requirement meet, then conduct pilot speedup ctc prefix scoring
         flag_partial_score = False
         if self.cur_beam_size == 1:
-            if (self.cur_token_len < len(self.reference_hyp.part_id_history)) and (self.cur_token_len > 0):
+            if (self.cur_token_len < len(self.reference_hyp.part_id_history)) and (self.cur_token_len > -1):
                 intersect_id = np.intersect1d(part_ids[0], self.reference_hyp.part_id_history[self.cur_token_len])
                 if len(intersect_id) >= 7:
                     part_ids = torch.from_numpy(intersect_id).unsqueeze(0)

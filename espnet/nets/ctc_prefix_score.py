@@ -161,6 +161,7 @@ class CTCPrefixScoreTH(object):
                 r[t] = torch.logsumexp(rr, 1) + x_[:, t]
         else:
             start1 = int(len(partial_state) * 3 / 4.0)
+            #start1 = int(len(partial_state))
             r[:start1] = partial_state[:start1]
             for t in range(start1, end):
                 rp = r[t - 1]
