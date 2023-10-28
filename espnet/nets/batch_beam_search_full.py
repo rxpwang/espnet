@@ -216,7 +216,7 @@ class BatchBeamSearchFull(BeamSearchFull):
             #logging.info(f"indices for the state: {indices}")
             #logging.info(f"indices for the state: {indices}")
             #logging.info(f"shape of the state: {self.reference_hyp.ctc_state_history['ctc'][self.cur_token_len + 1].size()}")
-            partial_states = self.reference_hyp.ctc_state_history['ctc'][self.cur_token_len + 1][:,:,:,torch.tensor(indices)]
+            partial_states = self.reference_hyp.ctc_state_history['ctc'][self.cur_token_len + 1][:,:,:,indices]
         else:
             partial_states = None
         for k, d in self.part_scorers.items():
