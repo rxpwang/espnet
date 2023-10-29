@@ -91,6 +91,8 @@ class Speech2Text_npass:
         stream_length: float = 0.0,
         pilot_step: int = 15,
         granularity: float = 0.5,
+        beam_reduce: bool = True,
+        ctc_speedup: bool = True,
         ctc_weight: float = 0.5,
         lm_weight: float = 1.0,
         ngram_weight: float = 0.9,
@@ -333,9 +335,13 @@ class Speech2Text_npass:
                     pre_beam_score_key=None if ctc_weight == 1.0 else "full",
                 )
 
+                logging.info(f"beam reduce status: {beam_reduce}")
+                logging.info(f"ctc speedup status: {ctc_speedup}")
 
                 beam_search_full = BeamSearchFull(
                     beam_size=beam_size,
+                    beam_reduce=beam_reduce,
+                    ctc_speedup=ctc_speedup,
                     weights=weights,
                     scorers=scorers,
                     sos=asr_model.sos,
@@ -835,6 +841,8 @@ def inference(
     stream_length: float,
     pilot_step: int,
     granularity: float,
+    beam_reduce: bool,
+    ctc_speedup: bool,
     ngpu: int,
     seed: int,
     ctc_weight: float,
@@ -891,6 +899,8 @@ def inference(
     set_all_random_seed(seed)
 
     # 2. Build speech2text
+    logging.info(f"beam reduce: {beam_reduce}")
+    logging.info(f"ctc speedup: {ctc_speedup}")
     speech2text_kwargs = dict(
         asr_train_config=asr_train_config,
         asr_model_file=asr_model_file,
@@ -909,6 +919,8 @@ def inference(
         stream_length=stream_length,
         pilot_step=pilot_step,
         granularity=granularity,
+        beam_reduce=beam_reduce,
+        ctc_speedup=ctc_speedup,
         ctc_weight=ctc_weight,
         lm_weight=lm_weight,
         ngram_weight=ngram_weight,
@@ -1184,6 +1196,8 @@ def get_parser():
     group.add_argument("--stream_length", type=float, default=0, help="streaming length")
     group.add_argument("--pilot_step", type=int, default=15, help="first pass beam search step")
     group.add_argument("--granularity", type=float, default=0.5, help="pilot decoding granularity")
+    group.add_argument("--beam_reduce", type=str2bool, default=True, help="Conduct beam reduction during inference")
+    group.add_argument("--ctc_speedup", type=str2bool, default=True, help="Conduct ctc speedup during inference")
 
     group = parser.add_argument_group("Text converter related")
     group.add_argument(

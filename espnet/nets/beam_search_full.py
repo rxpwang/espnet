@@ -35,6 +35,8 @@ class BeamSearchFull(torch.nn.Module):
         scorers: Dict[str, ScorerInterface],
         weights: Dict[str, float],
         beam_size: int,
+        beam_reduce: bool,
+        ctc_speedup: bool,
         vocab_size: int,
         sos: int,
         eos: int,
@@ -68,6 +70,9 @@ class BeamSearchFull(torch.nn.Module):
         self.full_scorers = dict()
         self.part_scorers = dict()
 
+        # set speedup
+        self.beam_reduce = beam_reduce
+        self.ctc_speedup = ctc_speedup
         # set placeholder for reference hyp
         self.reference_hyp = None
         self.cur_beam_size = beam_size
@@ -457,27 +462,28 @@ class BeamSearchFull(torch.nn.Module):
             best = self.search(running_hyps, x)
             self.cur_beam_size = len(best)
             # reduce the beam if best hyp match with reference
-            if ((i+1) < len(self.reference_hyp.yseq)):
-                # at early stage, we keep all the hyp with match token
-                if (self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]) & (i < -10000000):
-                    tmp_list = []
-                    for t in range(len(best)):
-                        if self.reference_hyp.yseq[i+1] == best[t].yseq[i+1]:
-                            tmp_list.append(best[t])
-                    if len(tmp_list) != 0:
-                        best = tmp_list
-                else:
-                    if self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]:
-                        best = [best[0]]
-                        self.cur_beam_size = 1
-            # reduce the beam size to 3 if the beam larger than 3 & all the new hypo develop from the same one
-            if len(best) > 3:
-                beam_reduce_flag = 1
-                for p in range(len(best)-1):
-                    if best[p+1].yseq[:i+1].equal(best[0].yseq[:i+1]) == False:
-                        beam_reduce_flag = 0
-                if beam_reduce_flag == 1:
-                    best = best[:3]
+            if self.beam_reduce == True:
+                if ((i+1) < len(self.reference_hyp.yseq)):
+                    # at early stage, we keep all the hyp with match token
+                    if (self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]) & (i < -10000000):
+                        tmp_list = []
+                        for t in range(len(best)):
+                            if self.reference_hyp.yseq[i+1] == best[t].yseq[i+1]:
+                                tmp_list.append(best[t])
+                        if len(tmp_list) != 0:
+                            best = tmp_list
+                    else:
+                        if self.reference_hyp.yseq[i+1] == best[0].yseq[i+1]:
+                            best = [best[0]]
+                            self.cur_beam_size = 1
+                # reduce the beam size to 3 if the beam larger than 3 & all the new hypo develop from the same one
+                if len(best) > 3:
+                    beam_reduce_flag = 1
+                    for p in range(len(best)-1):
+                        if best[p+1].yseq[:i+1].equal(best[0].yseq[:i+1]) == False:
+                            beam_reduce_flag = 0
+                    if beam_reduce_flag == 1:
+                        best = best[:3]
             # post process of one iteration
             running_hyps = self.post_process(i, maxlen, maxlenratio, best, ended_hyps)
             # end detection
