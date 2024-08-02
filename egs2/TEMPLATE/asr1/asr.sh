@@ -122,6 +122,8 @@ use_streaming=false # Whether to use streaming decoding
 use_maskctc=false # Whether to use maskctc decoding
 
 use_2pass_beam_search=false # Whether to use 2pass for partial and full length data
+use_pilot_beam_search=false # Whether to use pilot for partial and full length data
+use_pilot_beam_search_pp=false # Whether to use incremental pilot decoding for partial and full length data
 
 batch_size=1
 inference_tag=    # Suffix to the result dir for decoding.
@@ -1352,6 +1354,10 @@ if ! "${skip_eval}"; then
                 inference_bin_tag="_maskctc"
             elif "${use_2pass_beam_search}"; then
                 inference_bin_tag="_2pass"
+            elif "${use_pilot_beam_search}"; then
+                inference_bin_tag="_pilot"
+            elif "${use_pilot_beam_search_pp}"; then
+                inference_bin_tag="_pilot_pp"
             fi
         fi
 
